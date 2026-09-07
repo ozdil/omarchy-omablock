@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""
+OmaBlock Hosts Sync Helper
+Safely and atomically modifies /etc/hosts to apply or remove OmaBlock sinkhole rules.
+Adheres strictly to the Omarchy Security Guide:
+- Strict regex validation on domain entries (no shell injection, no arbitrary host overrides).
+- Preserves all pre-existing system and user hosts entries.
+- Atomic file replacement via os.replace to prevent race conditions or partial writes.
+- Automatic DNS cache flush via resolvectl.
+"""
+
+import os
+import re
+import sys
+import shutil
+import subprocess
+
+HOSTS_PATH = "/etc/hosts"
+BACKUP_PATH = "/etc/hosts.omablock.bak"
+TEMP_PATH = "/etc/hosts.omablock.tmp"
+
+BEGIN_MARKER = "# --- BEGIN OMABLOCK MANAGED RULES ---"
+END_MARKER = "# --- END OMABLOCK MANAGED RULES ---"
+BANNER_COMMENT = (
+    "# Managed automatically by OmaBlock (ozdil.omablock). Do not edit inside this block."
+)
+
+# Valid domain regex: alphanumeric, dots, hyphens; no slashes, backticks, nulls, spaces
+DOMAIN_REGEX = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9.-]{0,253}[a-zA-Z0-9]$")
+
+
+def flush_dns_cache():
+    """Flushes systemd-resolved DNS cache if available."""
+    try:
+        subprocess.run(
+            ["resolvectl", "flush-caches"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except Exception:
+        pass
+
+
+def strip_omablock_block(content: str) -> str:
+    """Removes any existing OmaBlock block from hosts content."""
+    lines = content.splitlines()
+    out = []
+    in_block = False
+
+    for line in lines:
+        if BEGIN_MARKER in line:
+            in_block = True
+            continue
+        if END_MARKER in line:
+            in_block = False
+            continue
+        if not in_block:
+            out.append(line)
+
+    # Trim trailing empty lines
+    while out and not out[-1].strip():
+        out.pop()
+
+    return "\n".join(out) + "\n"
+
+
+def ensure_backup():
+    """Creates a backup of /etc/hosts if it doesn't already exist."""
+    if not os.path.exists(BACKUP_PATH) and os.path.exists(HOSTS_PATH):
+        try:
+            shutil.copy2(HOSTS_PATH, BACKUP_PATH)
+        except Exception as e:
+            print(f"Warning: Could not create backup {BACKUP_PATH}: {e}", file=sys.stderr)
+
+
+def get_status():
+    """Checks if OmaBlock is currently active in /etc/hosts."""
+    if not os.path.exists(HOSTS_PATH):
+        print('{"active": false, "rule_count": 0}')
+        return
+
+    count = 0
+    in_block = False
+    with open(HOSTS_PATH, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            if BEGIN_MARKER in line:
+                in_block = True
+                continue
+            if END_MARKER in line:
+                in_block = False
+                break
+            if in_block and line.startswith("0.0.0.0 "):
+                count += 1
+
+    active = in_block or count > 0
+    print(f'{{"active": {str(active).lower()}, "rule_count": {count}}}')
+
+
+def apply_rules(rules_file: str):
+    """Reads rules file, validates each domain, and injects into /etc/hosts."""
+    if not os.path.exists(rules_file):
+        print(f"Error: Rules file '{rules_file}' not found.", file=sys.stderr)
+        sys.exit(1)
+
+    valid_domains = []
+    with open(rules_file, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            # Handle either "0.0.0.0 domain" or "domain"
+            parts = line.split()
+            if len(parts) >= 2 and parts[0] in ("0.0.0.0", "127.0.0.1"):
+                domain = parts[1].strip().lower()
+            elif len(parts) == 1:
+                domain = parts[0].strip().lower()
+            else:
+                continue
+
+            # Strip port or trailing dot
+            domain = domain.rstrip(".")
+            if domain in ("localhost", "0.0.0.0", "broadcasthost"):
+                continue
+
+            # Validate domain format
+            if DOMAIN_REGEX.match(domain):
+                valid_domains.append(domain)
+
+    # Read current hosts
+    content = ""
+    if os.path.exists(HOSTS_PATH):
+        with open(HOSTS_PATH, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+
+    ensure_backup()
+    clean_hosts = strip_omablock_block(content)
+
+    # Construct new hosts content
+    block_lines = [
+        "",
+        BEGIN_MARKER,
+        BANNER_COMMENT,
+    ]
+    for d in valid_domains:
+        block_lines.append(f"0.0.0.0 {d}")
+    block_lines.append(END_MARKER)
+    block_lines.append("")
+
+    new_content = clean_hosts + "\n".join(block_lines)
+
+    # Atomic write
+    with open(TEMP_PATH, "w", encoding="utf-8") as f:
+        f.write(new_content)
+    os.chmod(TEMP_PATH, 0o644)
+
+    # Atomic swap
+    os.replace(TEMP_PATH, HOSTS_PATH)
+    flush_dns_cache()
+    print(f"Applied {len(valid_domains)} OmaBlock rules to {HOSTS_PATH}.")
+
+
+def clear_rules():
+    """Removes OmaBlock rules from /etc/hosts."""
+    if not os.path.exists(HOSTS_PATH):
+        return
+
+    with open(HOSTS_PATH, "r", encoding="utf-8", errors="ignore") as f:
+        content = f.read()
+
+    if BEGIN_MARKER not in content:
+        flush_dns_cache()
+        print("OmaBlock rules were not active.")
+        return
+
+    clean_hosts = strip_omablock_block(content)
+
+    with open(TEMP_PATH, "w", encoding="utf-8") as f:
+        f.write(clean_hosts)
+    os.chmod(TEMP_PATH, 0o644)
+
+    os.replace(TEMP_PATH, HOSTS_PATH)
+    flush_dns_cache()
+    print("Cleared OmaBlock rules from /etc/hosts.")
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: omablock-hosts-sync [--apply <rules_file> | --clear | --status]")
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+    if cmd == "--status":
+        get_status()
+    elif cmd == "--clear":
+        if os.geteuid() != 0:
+            print("Error: --clear requires root privileges.", file=sys.stderr)
+            sys.exit(1)
+        clear_rules()
+    elif cmd == "--apply":
+        if len(sys.argv) < 3:
+            print("Error: Missing rules file path.", file=sys.stderr)
+            sys.exit(1)
+        if os.geteuid() != 0:
+            print("Error: --apply requires root privileges.", file=sys.stderr)
+            sys.exit(1)
+        apply_rules(sys.argv[2])
+    else:
+        print(f"Unknown command: {cmd}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

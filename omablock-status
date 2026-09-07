@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Quick CLI status helper for OmaBlock
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$DIR/omablock-engine" ]]; then
+  exec "$DIR/omablock-engine" "$@"
+elif which omablock >/dev/null 2>&1; then
+  exec omablock "$@"
+else
+  echo "omablock engine not found" >&2
+  exit 1
+fi
