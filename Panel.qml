@@ -227,11 +227,19 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: ""
-    tooltipText: root.isEnabled ? ("OmaBlock: Active (" + root.activeRules.toLocaleString() + " rules)") : "OmaBlock: Disabled"
-    active: root.isEnabled && root.systemHostsActive
-    activeColor: Color.accent
-    useActiveColor: true
-    dimmed: !root.isEnabled
+    useActiveColor: false
+    foreground: {
+      if (!root.systemHostsActive && root.isEnabled) {
+        return Color.urgent
+      } else if (!root.isEnabled) {
+        return "#f59e0b"
+      } else {
+        return root.bar ? root.bar.foreground : Color.foreground
+      }
+    }
+    tooltipText: !root.isEnabled
+                 ? "OmaBlock: Disabled (Protection Paused)"
+                 : (!root.systemHostsActive ? "OmaBlock: Error (Hosts Not Synced)" : ("OmaBlock: Active (" + root.activeRules.toLocaleString() + " rules)"))
     onPressed: function(b) {
       root.toggle()
     }
