@@ -524,48 +524,52 @@ Panel {
               onClicked: root.toggleCategory("ads")
             }
 
-            Row {
-              anchors.fill: parent
+            Text {
+              id: iconAds
+              anchors.left: parent.left
               anchors.leftMargin: Style.space(12)
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(22)
+              horizontalAlignment: Text.AlignHCenter
+              text: ""
+              font.family: Style.font.family
+              font.pixelSize: Style.font.icon
+              color: root.catAds ? Color.accent : Color.muted
+            }
+
+            ToggleSwitch {
+              id: toggleAds
+              anchors.right: parent.right
               anchors.rightMargin: Style.space(12)
-              spacing: Style.space(12)
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.catAds
+              accent: Color.accent
+              onToggled: root.toggleCategory("ads")
+            }
+
+            Column {
+              anchors.left: iconAds.right
+              anchors.leftMargin: Style.space(10)
+              anchors.right: toggleAds.left
+              anchors.rightMargin: Style.space(10)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(1)
 
               Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: ""
+                text: "Ads & Commercial Banners"
+                color: Color.foreground
                 font.family: Style.font.family
-                font.pixelSize: Style.font.icon
-                color: root.catAds ? Color.accent : Color.muted
+                font.pixelSize: Style.font.body
+                font.bold: true
               }
 
-              Column {
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(1)
-                width: parent.width - Style.space(90)
-
-                Text {
-                  text: "Ads & Commercial Banners"
-                  color: Color.foreground
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.body
-                  font.bold: true
-                }
-
-                Text {
-                  text: (root.countAds > 0 ? root.countAds.toLocaleString() : "75,416") + " domains • Popups, video ads, syndication"
-                  color: Color.muted
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption - 1
-                  elide: Text.ElideRight
-                  width: parent.width
-                }
-              }
-
-              ToggleSwitch {
-                anchors.verticalCenter: parent.verticalCenter
-                checked: root.catAds
-                accent: Color.accent
-                onToggled: root.toggleCategory("ads")
+              Text {
+                text: (root.countAds > 0 ? root.countAds.toLocaleString() : "75,416") + " domains • Popups, video ads, syndication"
+                color: Color.muted
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption - 1
+                elide: Text.ElideRight
+                width: parent.width
               }
             }
           }
@@ -585,48 +589,52 @@ Panel {
               onClicked: root.toggleCategory("telemetry")
             }
 
-            Row {
-              anchors.fill: parent
+            Text {
+              id: iconTelem
+              anchors.left: parent.left
               anchors.leftMargin: Style.space(12)
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(22)
+              horizontalAlignment: Text.AlignHCenter
+              text: "󰈉"
+              font.family: Style.font.family
+              font.pixelSize: Style.font.icon
+              color: root.catTelemetry ? Color.accent : Color.muted
+            }
+
+            ToggleSwitch {
+              id: toggleTelem
+              anchors.right: parent.right
               anchors.rightMargin: Style.space(12)
-              spacing: Style.space(12)
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.catTelemetry
+              accent: Color.accent
+              onToggled: root.toggleCategory("telemetry")
+            }
+
+            Column {
+              anchors.left: iconTelem.right
+              anchors.leftMargin: Style.space(10)
+              anchors.right: toggleTelem.left
+              anchors.rightMargin: Style.space(10)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(1)
 
               Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "󰈉"
+                text: "Telemetry & Surveillance"
+                color: Color.foreground
                 font.family: Style.font.family
-                font.pixelSize: Style.font.icon
-                color: root.catTelemetry ? Color.accent : Color.muted
+                font.pixelSize: Style.font.body
+                font.bold: true
               }
 
-              Column {
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(1)
-                width: parent.width - Style.space(90)
-
-                Text {
-                  text: "Telemetry & Surveillance"
-                  color: Color.foreground
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.body
-                  font.bold: true
-                }
-
-                Text {
-                  text: (root.countTelemetry > 0 ? root.countTelemetry.toLocaleString() : "3,666") + " domains • OS metrics, analytics, crash logs"
-                  color: Color.muted
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption - 1
-                  elide: Text.ElideRight
-                  width: parent.width
-                }
-              }
-
-              ToggleSwitch {
-                anchors.verticalCenter: parent.verticalCenter
-                checked: root.catTelemetry
-                accent: Color.accent
-                onToggled: root.toggleCategory("telemetry")
+              Text {
+                text: (root.countTelemetry > 0 ? root.countTelemetry.toLocaleString() : "3,666") + " domains • OS metrics, analytics, crash logs"
+                color: Color.muted
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption - 1
+                elide: Text.ElideRight
+                width: parent.width
               }
             }
           }
@@ -646,48 +654,52 @@ Panel {
               onClicked: root.toggleCategory("malware")
             }
 
-            Row {
-              anchors.fill: parent
+            Text {
+              id: iconMal
+              anchors.left: parent.left
               anchors.leftMargin: Style.space(12)
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(22)
+              horizontalAlignment: Text.AlignHCenter
+              text: ""
+              font.family: Style.font.family
+              font.pixelSize: Style.font.icon
+              color: root.catMalware ? Color.accent : Color.muted
+            }
+
+            ToggleSwitch {
+              id: toggleMal
+              anchors.right: parent.right
               anchors.rightMargin: Style.space(12)
-              spacing: Style.space(12)
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.catMalware
+              accent: Color.accent
+              onToggled: root.toggleCategory("malware")
+            }
+
+            Column {
+              anchors.left: iconMal.right
+              anchors.leftMargin: Style.space(10)
+              anchors.right: toggleMal.left
+              anchors.rightMargin: Style.space(10)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(1)
 
               Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: ""
+                text: "Malware & Phishing"
+                color: Color.foreground
                 font.family: Style.font.family
-                font.pixelSize: Style.font.icon
-                color: root.catMalware ? Color.accent : Color.muted
+                font.pixelSize: Style.font.body
+                font.bold: true
               }
 
-              Column {
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(1)
-                width: parent.width - Style.space(90)
-
-                Text {
-                  text: "Malware & Phishing"
-                  color: Color.foreground
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.body
-                  font.bold: true
-                }
-
-                Text {
-                  text: (root.countMalware > 0 ? root.countMalware.toLocaleString() : "449") + " domains • Scams, botnets, crypto miners"
-                  color: Color.muted
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption - 1
-                  elide: Text.ElideRight
-                  width: parent.width
-                }
-              }
-
-              ToggleSwitch {
-                anchors.verticalCenter: parent.verticalCenter
-                checked: root.catMalware
-                accent: Color.accent
-                onToggled: root.toggleCategory("malware")
+              Text {
+                text: (root.countMalware > 0 ? root.countMalware.toLocaleString() : "449") + " domains • Scams, botnets, crypto miners"
+                color: Color.muted
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption - 1
+                elide: Text.ElideRight
+                width: parent.width
               }
             }
           }
@@ -707,48 +719,52 @@ Panel {
               onClicked: root.toggleCategory("social")
             }
 
-            Row {
-              anchors.fill: parent
+            Text {
+              id: iconSoc
+              anchors.left: parent.left
               anchors.leftMargin: Style.space(12)
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(22)
+              horizontalAlignment: Text.AlignHCenter
+              text: ""
+              font.family: Style.font.family
+              font.pixelSize: Style.font.icon
+              color: root.catSocial ? Color.accent : Color.muted
+            }
+
+            ToggleSwitch {
+              id: toggleSoc
+              anchors.right: parent.right
               anchors.rightMargin: Style.space(12)
-              spacing: Style.space(12)
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.catSocial
+              accent: Color.accent
+              onToggled: root.toggleCategory("social")
+            }
+
+            Column {
+              anchors.left: iconSoc.right
+              anchors.leftMargin: Style.space(10)
+              anchors.right: toggleSoc.left
+              anchors.rightMargin: Style.space(10)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(1)
 
               Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: ""
+                text: "Social Network Trackers"
+                color: Color.foreground
                 font.family: Style.font.family
-                font.pixelSize: Style.font.icon
-                color: root.catSocial ? Color.accent : Color.muted
+                font.pixelSize: Style.font.body
+                font.bold: true
               }
 
-              Column {
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(1)
-                width: parent.width - Style.space(90)
-
-                Text {
-                  text: "Social Network Trackers"
-                  color: Color.foreground
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.body
-                  font.bold: true
-                }
-
-                Text {
-                  text: (root.countSocial > 0 ? root.countSocial.toLocaleString() : "30") + " domains • Facebook pixel, TikTok tracking"
-                  color: Color.muted
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption - 1
-                  elide: Text.ElideRight
-                  width: parent.width
-                }
-              }
-
-              ToggleSwitch {
-                anchors.verticalCenter: parent.verticalCenter
-                checked: root.catSocial
-                accent: Color.accent
-                onToggled: root.toggleCategory("social")
+              Text {
+                text: (root.countSocial > 0 ? root.countSocial.toLocaleString() : "30") + " domains • Facebook pixel, TikTok tracking"
+                color: Color.muted
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption - 1
+                elide: Text.ElideRight
+                width: parent.width
               }
             }
           }
@@ -853,48 +869,60 @@ Panel {
           text: "CUSTOM RULES & WHITELIST (" + (root.whitelist.length + root.blacklist.length) + ")"
         }
 
-        Row {
+        Item {
           width: parent.width
-          spacing: Style.space(8)
+          implicitHeight: Style.space(32)
+
+          Row {
+            id: ruleButtons
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(8)
+
+            Button {
+              id: btnAllow
+              implicitWidth: Style.space(64)
+              implicitHeight: Style.space(32)
+              horizontalPadding: Style.space(8)
+              bordered: true
+              text: "Allow"
+              fontSize: Style.font.caption
+              onClicked: {
+                if (domainInput.text.trim()) {
+                  root.addWhitelist(domainInput.text.trim())
+                  domainInput.text = ""
+                }
+              }
+            }
+
+            Button {
+              id: btnBlock
+              implicitWidth: Style.space(64)
+              implicitHeight: Style.space(32)
+              horizontalPadding: Style.space(8)
+              bordered: true
+              text: "Block"
+              fontSize: Style.font.caption
+              onClicked: {
+                if (domainInput.text.trim()) {
+                  root.addBlacklist(domainInput.text.trim())
+                  domainInput.text = ""
+                }
+              }
+            }
+          }
 
           TextField {
             id: domainInput
-            width: parent.width - Style.space(160)
+            anchors.left: parent.left
+            anchors.right: ruleButtons.left
+            anchors.rightMargin: Style.space(8)
+            anchors.verticalCenter: parent.verticalCenter
             implicitHeight: Style.space(32)
             placeholderText: "Domain (e.g. ad.example.com)"
             onAccepted: {
               if (domainInput.text.trim()) {
                 root.addWhitelist(domainInput.text.trim())
-                domainInput.text = ""
-              }
-            }
-          }
-
-          Button {
-            width: Style.space(72)
-            implicitHeight: Style.space(32)
-            horizontalPadding: Style.space(8)
-            bordered: true
-            text: "Allow"
-            fontSize: Style.font.caption
-            onClicked: {
-              if (domainInput.text.trim()) {
-                root.addWhitelist(domainInput.text.trim())
-                domainInput.text = ""
-              }
-            }
-          }
-
-          Button {
-            width: Style.space(72)
-            implicitHeight: Style.space(32)
-            horizontalPadding: Style.space(8)
-            bordered: true
-            text: "Block"
-            fontSize: Style.font.caption
-            onClicked: {
-              if (domainInput.text.trim()) {
-                root.addBlacklist(domainInput.text.trim())
                 domainInput.text = ""
               }
             }
