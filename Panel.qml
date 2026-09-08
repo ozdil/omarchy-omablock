@@ -815,6 +815,7 @@ Panel {
           Button {
             width: Math.floor((parent.width - Style.space(16)) / 3)
             implicitHeight: Style.space(34)
+            horizontalPadding: Style.space(6)
             bordered: true
             iconText: root.isTesting ? "" : ""
             text: root.isTesting ? "Testing..." : "Test Shield"
@@ -825,6 +826,7 @@ Panel {
           Button {
             width: Math.floor((parent.width - Style.space(16)) / 3)
             implicitHeight: Style.space(34)
+            horizontalPadding: Style.space(6)
             bordered: true
             iconText: root.isUpdating ? "" : ""
             text: root.isUpdating ? "Updating..." : "Update Lists"
@@ -833,8 +835,9 @@ Panel {
           }
 
           Button {
-            width: parent.width - (Math.floor((parent.width - Style.space(16)) / 3) * 2) - Style.space(16)
+            width: Math.floor((parent.width - Style.space(16)) / 3)
             implicitHeight: Style.space(34)
+            horizontalPadding: Style.space(6)
             bordered: true
             iconText: ""
             text: "Flush DNS"
@@ -852,11 +855,11 @@ Panel {
 
         Row {
           width: parent.width
-          spacing: Style.space(6)
+          spacing: Style.space(8)
 
           TextField {
             id: domainInput
-            width: parent.width - Style.space(136)
+            width: parent.width - Style.space(160)
             implicitHeight: Style.space(32)
             placeholderText: "Domain (e.g. ad.example.com)"
             onAccepted: {
@@ -868,8 +871,9 @@ Panel {
           }
 
           Button {
-            width: Style.space(62)
+            width: Style.space(72)
             implicitHeight: Style.space(32)
+            horizontalPadding: Style.space(8)
             bordered: true
             text: "Allow"
             fontSize: Style.font.caption
@@ -882,8 +886,9 @@ Panel {
           }
 
           Button {
-            width: Style.space(62)
+            width: Style.space(72)
             implicitHeight: Style.space(32)
+            horizontalPadding: Style.space(8)
             bordered: true
             text: "Block"
             fontSize: Style.font.caption
