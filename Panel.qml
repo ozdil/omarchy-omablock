@@ -226,7 +226,7 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: ""
+    text: ""
     tooltipText: root.isEnabled ? ("OmaBlock: Active (" + root.activeRules.toLocaleString() + " rules)") : "OmaBlock: Disabled"
     active: root.isEnabled && root.systemHostsActive
     activeColor: Color.accent
@@ -266,7 +266,7 @@ Panel {
           Text {
             id: heroIcon
             textFormat: Text.PlainText
-            text: ""
+            text: ""
             color: (root.isEnabled && root.systemHostsActive) ? Color.accent : Color.muted
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.display
@@ -397,7 +397,7 @@ Panel {
                 Text {
                   text: root.activeRules > 0 ? root.activeRules.toLocaleString() : (root.isEnabled ? "79,561" : "0")
                   font.family: Style.font.family
-                  font.pixelSize: Style.font.title
+                  font.pixelSize: Style.font.subtitle
                   font.bold: true
                   color: Color.foreground
                 }
@@ -439,7 +439,7 @@ Panel {
                 Text {
                   text: "< 0.1ms"
                   font.family: Style.font.family
-                  font.pixelSize: Style.font.title
+                  font.pixelSize: Style.font.subtitle
                   font.bold: true
                   color: Color.foreground
                 }
@@ -457,7 +457,7 @@ Panel {
 
           // Card 3: DNS Enforcement
           BorderSurface {
-            width: parent.width - (Math.floor((parent.width - Style.space(16)) / 3) * 2) - Style.space(16)
+            width: Math.floor((parent.width - Style.space(16)) / 3)
             implicitHeight: Style.space(64)
             radius: Style.cornerRadius
             color: Style.controlFill(false, false, Color.foreground, Color.accent)
@@ -479,9 +479,9 @@ Panel {
                 }
 
                 Text {
-                  text: (root.isEnabled && root.systemHostsActive) ? "Enforced" : "Standby"
+                  text: (root.isEnabled && root.systemHostsActive) ? "Active" : "Standby"
                   font.family: Style.font.family
-                  font.pixelSize: Style.font.title
+                  font.pixelSize: Style.font.subtitle
                   font.bold: true
                   color: Color.foreground
                 }
@@ -489,7 +489,7 @@ Panel {
 
               Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "System DNS"
+                text: "Enforced DNS"
                 font.family: Style.font.family
                 font.pixelSize: Style.font.caption - 1
                 color: Color.muted
