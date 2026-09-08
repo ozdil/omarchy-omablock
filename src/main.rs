@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::net::ToSocketAddrs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Instant;
 
@@ -136,21 +136,7 @@ struct ParsedRules {
     pub category_counts: HashMap<String, usize>,
 }
 
-fn load_all_rules() -> ParsedRules {
-    let mut all_rules = HashMap::new();
-    let mut category_counts = HashMap::new();
-    category_counts.insert("ads".to_string(), 0);
-    category_counts.insert("telemetry".to_string(), 0);
-    category_counts.insert("malware".to_string(), 0);
-    category_counts.insert("social".to_string(), 0);
-
-    let cached_path = get_cached_rules_path();
-    let content = if cached_path.exists() {
-        fs::read_to_string(&cached_path).unwrap_or_else(|_| BUILTIN_RULES.to_string())
-    } else {
-        BUILTIN_RULES.to_string()
-    };
-
+fn parse_rules_content(content: &str, all_rules: &mut HashMap<String, String>) {
     for line in content.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -160,16 +146,36 @@ fn load_all_rules() -> ParsedRules {
         if parts.len() >= 2 {
             let cat = parts[0].to_lowercase();
             let domain = parts[1].to_lowercase();
-            all_rules.insert(domain, cat.clone());
-            if let Some(c) = category_counts.get_mut(&cat) {
-                *c += 1;
-            }
+            all_rules.insert(domain, cat);
         } else if parts.len() == 1 {
             let domain = parts[0].to_lowercase();
             all_rules.insert(domain, "ads".to_string());
-            if let Some(c) = category_counts.get_mut("ads") {
-                *c += 1;
-            }
+        }
+    }
+}
+
+fn load_all_rules() -> ParsedRules {
+    let mut all_rules = HashMap::new();
+    let mut category_counts = HashMap::new();
+    category_counts.insert("ads".to_string(), 0);
+    category_counts.insert("telemetry".to_string(), 0);
+    category_counts.insert("malware".to_string(), 0);
+    category_counts.insert("social".to_string(), 0);
+
+    // 1. Always load curated builtin rules FIRST (ensures telemetry and ad sinks exist)
+    parse_rules_content(BUILTIN_RULES, &mut all_rules);
+
+    // 2. Overlay cached upstream rules if available
+    let cached_path = get_cached_rules_path();
+    if cached_path.exists() {
+        if let Ok(content) = fs::read_to_string(&cached_path) {
+            parse_rules_content(&content, &mut all_rules);
+        }
+    }
+
+    for cat in all_rules.values() {
+        if let Some(c) = category_counts.get_mut(cat) {
+            *c += 1;
         }
     }
 
@@ -249,12 +255,17 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
     active_domains.len()
 }
 
-fn run_verification_test(cfg: &mut OmaBlockConfig) -> TestSummary {
+fn run_verification_test(cfg: &mut OmaBlockConfig, rules: &ParsedRules) -> TestSummary {
+    if cfg.enabled {
+        let _ = sync_system_hosts(cfg, rules);
+        let _ = Command::new("sudo").args(["resolvectl", "flush-caches"]).output();
+    }
+
     let test_domains = vec![
-        ("doubleclick.net", true),
-        ("pagead2.googlesyndication.com", true),
-        ("telemetry.microsoft.com", true),
-        ("google-analytics.com", true),
+        ("doubleclick.net", cfg.categories.ads),
+        ("pagead2.googlesyndication.com", cfg.categories.ads),
+        ("telemetry.microsoft.com", cfg.categories.telemetry),
+        ("google-analytics.com", cfg.categories.telemetry),
         ("archlinux.org", false),
     ];
 
@@ -320,8 +331,8 @@ fn run_verification_test(cfg: &mut OmaBlockConfig) -> TestSummary {
     let summary_msg = if cfg.enabled {
         if all_passed {
             format!(
-                "Protection Verified: 4/4 ad & tracker domains blocked (avg {}ms)",
-                avg_latency
+                "Protection Verified: {}/4 ad & tracker domains blocked (avg {}ms)",
+                blocked_count, avg_latency
             )
         } else {
             "Partial: Some domains were not blocked by sinkhole".to_string()
@@ -557,7 +568,7 @@ fn main() {
             }
         }
         "--test" => {
-            let res = run_verification_test(&mut cfg);
+            let res = run_verification_test(&mut cfg, &rules);
             println!("{}", serde_json::to_string_pretty(&res).unwrap());
         }
         "--update" => {
