@@ -243,7 +243,7 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    contentWidth: panel.fittedContentWidth(Style.space(430))
+    contentWidth: panel.fittedContentWidth(Style.space(500))
     contentHeight: panel.fittedContentHeight(panelColumn.implicitHeight + Style.space(24), Style.space(840))
 
     ScrollView {
@@ -367,13 +367,13 @@ Panel {
         }
 
         // ---------- Key Metrics 3-Card Row ----------
-        Row {
+        RowLayout {
           width: parent.width
           spacing: Style.space(8)
 
           // Card 1: Active Rules
           BorderSurface {
-            width: Math.floor((parent.width - Style.space(16)) / 3)
+            Layout.fillWidth: true
             implicitHeight: Style.space(64)
             radius: Style.cornerRadius
             color: Style.controlFill(false, false, Color.foreground, Color.accent)
@@ -415,7 +415,7 @@ Panel {
 
           // Card 2: Speed / Latency
           BorderSurface {
-            width: Math.floor((parent.width - Style.space(16)) / 3)
+            Layout.fillWidth: true
             implicitHeight: Style.space(64)
             radius: Style.cornerRadius
             color: Style.controlFill(false, false, Color.foreground, Color.accent)
@@ -457,7 +457,7 @@ Panel {
 
           // Card 3: DNS Enforcement
           BorderSurface {
-            width: Math.floor((parent.width - Style.space(16)) / 3)
+            Layout.fillWidth: true
             implicitHeight: Style.space(64)
             radius: Style.cornerRadius
             color: Style.controlFill(false, false, Color.foreground, Color.accent)
@@ -561,6 +561,8 @@ Panel {
                 font.family: Style.font.family
                 font.pixelSize: Style.font.body
                 font.bold: true
+                elide: Text.ElideRight
+                width: parent.width
               }
 
               Text {
@@ -626,6 +628,8 @@ Panel {
                 font.family: Style.font.family
                 font.pixelSize: Style.font.body
                 font.bold: true
+                elide: Text.ElideRight
+                width: parent.width
               }
 
               Text {
@@ -691,6 +695,8 @@ Panel {
                 font.family: Style.font.family
                 font.pixelSize: Style.font.body
                 font.bold: true
+                elide: Text.ElideRight
+                width: parent.width
               }
 
               Text {
@@ -756,6 +762,8 @@ Panel {
                 font.family: Style.font.family
                 font.pixelSize: Style.font.body
                 font.bold: true
+                elide: Text.ElideRight
+                width: parent.width
               }
 
               Text {
@@ -784,52 +792,55 @@ Panel {
           color: Style.controlFill(false, false, Color.foreground, Color.accent)
           borderSpec: Border.controlSpec(root.testSuccess ? "selected" : "normal", Color.foreground, Color.accent)
 
-          Row {
-            anchors.fill: parent
+          Text {
+            id: diagIcon
+            anchors.left: parent.left
             anchors.leftMargin: Style.space(12)
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.space(22)
+            horizontalAlignment: Text.AlignHCenter
+            text: root.isTesting ? "" : (root.testSuccess ? "" : "")
+            font.family: Style.font.family
+            font.pixelSize: Style.font.icon
+            color: root.isTesting ? Color.foreground : (root.testSuccess ? Color.accent : Color.muted)
+          }
+
+          Column {
+            anchors.left: diagIcon.right
+            anchors.leftMargin: Style.space(10)
+            anchors.right: parent.right
             anchors.rightMargin: Style.space(12)
-            spacing: Style.space(12)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(1)
 
             Text {
-              anchors.verticalCenter: parent.verticalCenter
-              text: root.isTesting ? "" : (root.testSuccess ? "" : "")
+              text: root.isTesting ? "Resolving test ad domains..." : (root.testSuccess ? "Sinkhole Verified & Active" : "Shield Verification Pending")
+              color: Color.foreground
               font.family: Style.font.family
-              font.pixelSize: Style.font.icon
-              color: root.isTesting ? Color.foreground : (root.testSuccess ? Color.accent : Color.muted)
+              font.pixelSize: Style.font.body
+              font.bold: true
+              elide: Text.ElideRight
+              width: parent.width
             }
 
-            Column {
-              anchors.verticalCenter: parent.verticalCenter
-              spacing: Style.space(1)
-              width: parent.width - Style.space(50)
-
-              Text {
-                text: root.isTesting ? "Resolving test ad domains..." : (root.testSuccess ? "Sinkhole Verified & Active" : "Shield Verification Pending")
-                color: Color.foreground
-                font.family: Style.font.family
-                font.pixelSize: Style.font.body
-                font.bold: true
-              }
-
-              Text {
-                text: root.testMessage ? root.testMessage : "Test known ad servers (doubleclick.net, pagead2) for 0.0.0.0 sinkhole."
-                color: Color.muted
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption - 1
-                elide: Text.ElideRight
-                width: parent.width
-              }
+            Text {
+              text: root.testMessage ? root.testMessage : "Test known ad servers (doubleclick.net, pagead2) for 0.0.0.0 sinkhole."
+              color: Color.muted
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption - 1
+              elide: Text.ElideRight
+              width: parent.width
             }
           }
         }
 
         // Action Buttons Row
-        Row {
+        RowLayout {
           width: parent.width
           spacing: Style.space(8)
 
           Button {
-            width: Math.floor((parent.width - Style.space(16)) / 3)
+            Layout.fillWidth: true
             implicitHeight: Style.space(34)
             horizontalPadding: Style.space(6)
             bordered: true
@@ -840,7 +851,7 @@ Panel {
           }
 
           Button {
-            width: Math.floor((parent.width - Style.space(16)) / 3)
+            Layout.fillWidth: true
             implicitHeight: Style.space(34)
             horizontalPadding: Style.space(6)
             bordered: true
@@ -851,7 +862,7 @@ Panel {
           }
 
           Button {
-            width: Math.floor((parent.width - Style.space(16)) / 3)
+            Layout.fillWidth: true
             implicitHeight: Style.space(34)
             horizontalPadding: Style.space(6)
             bordered: true
@@ -944,14 +955,13 @@ Panel {
               color: Style.controlFill(false, false, Color.foreground, Color.accent)
               borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
 
-              Row {
+              RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: Style.space(8)
                 anchors.rightMargin: Style.space(8)
                 spacing: Style.space(8)
 
                 Text {
-                  anchors.verticalCenter: parent.verticalCenter
                   text: " Allow:"
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption - 1
@@ -960,19 +970,17 @@ Panel {
                 }
 
                 Text {
-                  anchors.verticalCenter: parent.verticalCenter
+                  Layout.fillWidth: true
                   text: modelData
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
                   color: Color.foreground
-                  width: parent.width - Style.space(80)
                   elide: Text.ElideRight
                 }
 
                 MouseArea {
-                  anchors.verticalCenter: parent.verticalCenter
-                  width: Style.space(20)
-                  height: Style.space(20)
+                  Layout.preferredWidth: Style.space(20)
+                  Layout.preferredHeight: Style.space(20)
                   cursorShape: Qt.PointingHandCursor
                   onClicked: root.removeWhitelist(modelData)
 
@@ -997,14 +1005,13 @@ Panel {
               color: Style.controlFill(false, false, Color.foreground, Color.accent)
               borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
 
-              Row {
+              RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: Style.space(8)
                 anchors.rightMargin: Style.space(8)
                 spacing: Style.space(8)
 
                 Text {
-                  anchors.verticalCenter: parent.verticalCenter
                   text: " Block:"
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption - 1
@@ -1013,19 +1020,17 @@ Panel {
                 }
 
                 Text {
-                  anchors.verticalCenter: parent.verticalCenter
+                  Layout.fillWidth: true
                   text: modelData
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
                   color: Color.foreground
-                  width: parent.width - Style.space(80)
                   elide: Text.ElideRight
                 }
 
                 MouseArea {
-                  anchors.verticalCenter: parent.verticalCenter
-                  width: Style.space(20)
-                  height: Style.space(20)
+                  Layout.preferredWidth: Style.space(20)
+                  Layout.preferredHeight: Style.space(20)
                   cursorShape: Qt.PointingHandCursor
                   onClicked: root.removeBlacklist(modelData)
 
