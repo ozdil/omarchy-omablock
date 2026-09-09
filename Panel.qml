@@ -212,6 +212,15 @@ Panel {
     onTriggered: root.toastMsg = ""
   }
 
+
+  Component.onDestruction: {
+    if (statusProc.running) statusProc.running = false
+    if (actionProc.running) actionProc.running = false
+    if (testProc.running) testProc.running = false
+    if (updateProc.running) updateProc.running = false
+    if (autoRefreshTimer.running) autoRefreshTimer.running = false
+    if (toastTimer.running) toastTimer.running = false
+  }
   Timer {
     id: autoRefreshTimer
     interval: 15000
@@ -295,6 +304,7 @@ Panel {
               spacing: Style.space(8)
 
               Text {
+                textFormat: Text.PlainText
                 text: "OmaBlock"
                 color: root.bar ? root.bar.foreground : Color.foreground
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
@@ -312,6 +322,7 @@ Panel {
                 implicitWidth: statusPillText.implicitWidth + Style.space(12)
 
                 Text {
+                  textFormat: Text.PlainText
                   id: statusPillText
                   anchors.centerIn: parent
                   text: (root.isEnabled && root.systemHostsActive) ? "ACTIVE • PROTECTED" : "SHIELD DISABLED"
@@ -324,6 +335,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               text: "Kernel-level zero-latency ad and tracker shield"
               color: Color.muted
               font.family: root.bar ? root.bar.fontFamily : Style.font.family
@@ -357,6 +369,7 @@ Panel {
             spacing: Style.space(8)
 
             Text {
+              textFormat: Text.PlainText
               text: ""
               font.family: Style.font.family
               font.pixelSize: Style.font.body
@@ -364,6 +377,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               id: toastLabel
               text: root.toastMsg
               font.family: Style.font.family
@@ -396,6 +410,7 @@ Panel {
                 spacing: Style.space(6)
 
                 Text {
+                  textFormat: Text.PlainText
                   text: ""
                   font.family: Style.font.family
                   font.pixelSize: Style.font.body
@@ -403,6 +418,7 @@ Panel {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                   text: root.activeRules > 0 ? root.activeRules.toLocaleString() : (root.isEnabled ? "79,561" : "0")
                   font.family: Style.font.family
                   font.pixelSize: Style.font.subtitle
@@ -412,6 +428,7 @@ Panel {
               }
 
               Text {
+                textFormat: Text.PlainText
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Blocked Rules"
                 font.family: Style.font.family
@@ -438,6 +455,7 @@ Panel {
                 spacing: Style.space(6)
 
                 Text {
+                  textFormat: Text.PlainText
                   text: ""
                   font.family: Style.font.family
                   font.pixelSize: Style.font.body
@@ -445,6 +463,7 @@ Panel {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                   text: "< 0.1ms"
                   font.family: Style.font.family
                   font.pixelSize: Style.font.subtitle
@@ -454,6 +473,7 @@ Panel {
               }
 
               Text {
+                textFormat: Text.PlainText
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Sinkhole Latency"
                 font.family: Style.font.family
@@ -480,6 +500,7 @@ Panel {
                 spacing: Style.space(6)
 
                 Text {
+                  textFormat: Text.PlainText
                   text: "󰒃"
                   font.family: Style.font.family
                   font.pixelSize: Style.font.body
@@ -487,6 +508,7 @@ Panel {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                   text: (root.isEnabled && root.systemHostsActive) ? "Active" : "Standby"
                   font.family: Style.font.family
                   font.pixelSize: Style.font.subtitle
@@ -496,6 +518,7 @@ Panel {
               }
 
               Text {
+                textFormat: Text.PlainText
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Enforced DNS"
                 font.family: Style.font.family
@@ -533,6 +556,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               id: iconAds
               anchors.left: parent.left
               anchors.leftMargin: Style.space(12)
@@ -564,6 +588,7 @@ Panel {
               spacing: Style.space(1)
 
               Text {
+                textFormat: Text.PlainText
                 text: "Ads & Commercial Banners"
                 color: Color.foreground
                 font.family: Style.font.family
@@ -574,6 +599,7 @@ Panel {
               }
 
               Text {
+                textFormat: Text.PlainText
                 text: (root.countAds > 0 ? root.countAds.toLocaleString() : "75,416") + " domains • Popups, video ads, syndication"
                 color: Color.muted
                 font.family: Style.font.family
@@ -600,6 +626,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               id: iconTelem
               anchors.left: parent.left
               anchors.leftMargin: Style.space(12)
@@ -631,6 +658,7 @@ Panel {
               spacing: Style.space(1)
 
               Text {
+                textFormat: Text.PlainText
                 text: "Telemetry & Surveillance"
                 color: Color.foreground
                 font.family: Style.font.family
@@ -641,6 +669,7 @@ Panel {
               }
 
               Text {
+                textFormat: Text.PlainText
                 text: (root.countTelemetry > 0 ? root.countTelemetry.toLocaleString() : "3,666") + " domains • OS metrics, analytics, crash logs"
                 color: Color.muted
                 font.family: Style.font.family
@@ -667,6 +696,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               id: iconMal
               anchors.left: parent.left
               anchors.leftMargin: Style.space(12)
@@ -698,6 +728,7 @@ Panel {
               spacing: Style.space(1)
 
               Text {
+                textFormat: Text.PlainText
                 text: "Malware & Phishing"
                 color: Color.foreground
                 font.family: Style.font.family
@@ -708,6 +739,7 @@ Panel {
               }
 
               Text {
+                textFormat: Text.PlainText
                 text: (root.countMalware > 0 ? root.countMalware.toLocaleString() : "449") + " domains • Scams, botnets, crypto miners"
                 color: Color.muted
                 font.family: Style.font.family
@@ -734,6 +766,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               id: iconSoc
               anchors.left: parent.left
               anchors.leftMargin: Style.space(12)
@@ -765,6 +798,7 @@ Panel {
               spacing: Style.space(1)
 
               Text {
+                textFormat: Text.PlainText
                 text: "Social Network Trackers"
                 color: Color.foreground
                 font.family: Style.font.family
@@ -775,6 +809,7 @@ Panel {
               }
 
               Text {
+                textFormat: Text.PlainText
                 text: (root.countSocial > 0 ? root.countSocial.toLocaleString() : "30") + " domains • Facebook pixel, TikTok tracking"
                 color: Color.muted
                 font.family: Style.font.family
@@ -801,6 +836,7 @@ Panel {
           borderSpec: Border.controlSpec(root.testSuccess ? "selected" : "normal", Color.foreground, Color.accent)
 
           Text {
+            textFormat: Text.PlainText
             id: diagIcon
             anchors.left: parent.left
             anchors.leftMargin: Style.space(12)
@@ -822,6 +858,7 @@ Panel {
             spacing: Style.space(1)
 
             Text {
+              textFormat: Text.PlainText
               text: root.isTesting ? "Resolving test ad domains..." : (root.testSuccess ? "Sinkhole Verified & Active" : "Shield Verification Pending")
               color: Color.foreground
               font.family: Style.font.family
@@ -832,6 +869,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               text: root.testMessage ? root.testMessage : "Test known ad servers (doubleclick.net, pagead2) for 0.0.0.0 sinkhole."
               color: Color.muted
               font.family: Style.font.family
@@ -970,6 +1008,7 @@ Panel {
                 spacing: Style.space(8)
 
                 Text {
+                  textFormat: Text.PlainText
                   text: " Allow:"
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption - 1
@@ -978,6 +1017,7 @@ Panel {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                   Layout.fillWidth: true
                   text: modelData
                   font.family: Style.font.family
@@ -993,6 +1033,7 @@ Panel {
                   onClicked: root.removeWhitelist(modelData)
 
                   Text {
+                    textFormat: Text.PlainText
                     anchors.centerIn: parent
                     text: ""
                     font.family: Style.font.family
@@ -1020,6 +1061,7 @@ Panel {
                 spacing: Style.space(8)
 
                 Text {
+                  textFormat: Text.PlainText
                   text: " Block:"
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption - 1
@@ -1028,6 +1070,7 @@ Panel {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                   Layout.fillWidth: true
                   text: modelData
                   font.family: Style.font.family
@@ -1043,6 +1086,7 @@ Panel {
                   onClicked: root.removeBlacklist(modelData)
 
                   Text {
+                    textFormat: Text.PlainText
                     anchors.centerIn: parent
                     text: ""
                     font.family: Style.font.family
@@ -1057,6 +1101,7 @@ Panel {
 
         // ---------- Bottom Meta Footer ----------
         Text {
+          textFormat: Text.PlainText
           anchors.horizontalCenter: parent.horizontalCenter
           text: "OmaBlock v1.0 • Updated: " + root.lastUpdated
           font.family: Style.font.family
