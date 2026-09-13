@@ -103,6 +103,16 @@ def apply_rules(rules_file: str):
         print(f"Error: Rules file '{rules_file}' not found.", file=sys.stderr)
         sys.exit(1)
 
+    # Security check: verify rules_file is a regular file and not a symlink
+    try:
+        st = os.lstat(rules_file)
+        if os.path.islink(rules_file) or not os.path.isfile(rules_file):
+            print(f"Security violation: Rules file '{rules_file}' must be a regular file, not a symlink.", file=sys.stderr)
+            sys.exit(1)
+    except Exception as e:
+        print(f"Security violation: Could not verify rules file '{rules_file}': {e}", file=sys.stderr)
+        sys.exit(1)
+
     valid_domains = []
     with open(rules_file, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
@@ -150,8 +160,10 @@ def apply_rules(rules_file: str):
 
     new_content = clean_hosts + "\n".join(block_lines)
 
-    # Atomic write
-    with open(TEMP_PATH, "w", encoding="utf-8") as f:
+    # Atomic write with O_NOFOLLOW
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(TEMP_PATH, flags, 0o644)
+    with open(fd, "w", encoding="utf-8") as f:
         f.write(new_content)
     os.chmod(TEMP_PATH, 0o644)
 
@@ -176,7 +188,9 @@ def clear_rules():
 
     clean_hosts = strip_omablock_block(content)
 
-    with open(TEMP_PATH, "w", encoding="utf-8") as f:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(TEMP_PATH, flags, 0o644)
+    with open(fd, "w", encoding="utf-8") as f:
         f.write(clean_hosts)
     os.chmod(TEMP_PATH, 0o644)
 
