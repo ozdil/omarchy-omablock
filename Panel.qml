@@ -37,7 +37,7 @@ Panel {
   property bool autoUpdate: false
   property bool startupUpdateChecked: false
   property int pauseRemainingSecs: 0
-  property bool dohPrevention: true
+  property bool dohPrevention: false
 
   property bool isTesting: false
   property bool isUpdating: false
@@ -194,7 +194,7 @@ Panel {
           root.lastUpdated = d.last_updated || "Built-in Curated v1.0"
           root.autoUpdate = !!d.auto_update
           root.pauseRemainingSecs = d.pause_remaining_secs || 0
-          root.dohPrevention = d.doh_prevention !== false
+          root.dohPrevention = !!d.doh_prevention
 
           if (!root.startupUpdateChecked) {
             root.startupUpdateChecked = true
@@ -1202,7 +1202,7 @@ Panel {
 
             Text {
               textFormat: Text.PlainText
-              text: root.dohPrevention ? "Canary shield forces Firefox & Chrome to obey hosts" : "Browsers may bypass sinkhole via encrypted DoH"
+              text: root.dohPrevention ? "Mozilla canary domain signals browsers to obey system hosts" : "Browsers may bypass sinkhole via encrypted DoH"
               color: Color.muted
               font.family: Style.font.family
               font.pixelSize: Style.font.caption - 1
