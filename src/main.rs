@@ -58,6 +58,8 @@ pub struct OmaBlockConfig {
     pub blacklist: Vec<String>,
     pub last_updated: Option<String>,
     pub last_test: Option<TestSummary>,
+    #[serde(default)]
+    pub auto_update: bool,
 }
 
 impl Default for OmaBlockConfig {
@@ -69,6 +71,7 @@ impl Default for OmaBlockConfig {
             blacklist: Vec::new(),
             last_updated: Some("Built-in Curated v1.0".to_string()),
             last_test: None,
+            auto_update: false,
         }
     }
 }
@@ -85,6 +88,7 @@ pub struct StatusOutput {
     pub last_updated: String,
     pub last_test: Option<TestSummary>,
     pub system_hosts_active: bool,
+    pub auto_update: bool,
 }
 
 /// Validates that a string is a legitimate RFC 1035 domain name without shell/hosts injection
@@ -579,6 +583,7 @@ fn main() {
             last_updated: cfg.last_updated.unwrap_or_else(|| "Curated v1.0".to_string()),
             last_test: cfg.last_test.clone(),
             system_hosts_active: system_active,
+            auto_update: cfg.auto_update,
         };
 
         if let Ok(json) = serde_json::to_string_pretty(&output) {
@@ -721,8 +726,37 @@ fn main() {
             let count = sync_system_hosts(&cfg, &rules);
             println!("Synced {} rules to /etc/hosts.", count);
         }
+        "--toggle-auto-update" => {
+            cfg.auto_update = !cfg.auto_update;
+            save_config(&cfg);
+            println!("Auto-update on startup set to: {}", cfg.auto_update);
+        }
+        "--set-auto-update" => {
+            if args.len() > 2 {
+                let val = match args[2].to_lowercase().as_str() {
+                    "true" | "1" | "on" => true,
+                    "false" | "0" | "off" => false,
+                    _ => {
+                        eprintln!("Invalid boolean value: {}", args[2]);
+                        return;
+                    }
+                };
+                cfg.auto_update = val;
+                save_config(&cfg);
+                println!("Auto-update on startup set to: {}", cfg.auto_update);
+            }
+        }
+        "--startup" => {
+            if cfg.auto_update {
+                println!("Auto-update on startup is active. Fetching latest rules...");
+                let ok = update_blocklists_online(&mut cfg, &mut rules);
+                println!("Startup update finished. Success: {}", ok);
+            } else {
+                println!("Auto-update on startup is disabled. Skipping.");
+            }
+        }
         _ => {
-            eprintln!("Usage: omablock-engine [--status|--enable|--disable|--toggle|--toggle-category <cat>|--whitelist-add <d>|--whitelist-remove <d>|--blacklist-add <d>|--blacklist-remove <d>|--test|--update|--flush]");
+            eprintln!("Usage: omablock-engine [--status|--enable|--disable|--toggle|--toggle-category <cat>|--whitelist-add <d>|--whitelist-remove <d>|--blacklist-add <d>|--blacklist-remove <d>|--toggle-auto-update|--set-auto-update <bool>|--startup|--test|--update|--flush]");
         }
     }
 }
@@ -798,5 +832,15 @@ mod tests {
         assert!(matches(d1));
         assert!(!matches(d2));
         assert!(matches(d3));
+    }
+
+    #[test]
+    fn test_auto_update_config() {
+        let mut cfg = OmaBlockConfig::default();
+        assert!(!cfg.auto_update);
+        cfg.auto_update = true;
+        let json = serde_json::to_string(&cfg).unwrap();
+        let loaded: OmaBlockConfig = serde_json::from_str(&json).unwrap();
+        assert!(loaded.auto_update);
     }
 }
