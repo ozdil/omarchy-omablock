@@ -65,13 +65,46 @@ def strip_omablock_block(content: str) -> str:
     return "\n".join(out) + "\n"
 
 
+RESERVED_DOMAINS = {
+    "localhost",
+    "broadcasthost",
+    "local",
+    "ip6-localhost",
+    "ip6-loopback",
+    "ip6-allnodes",
+    "ip6-allrouters",
+    "ip6-allhosts",
+    "0.0.0.0",
+    "255.255.255.255",
+}
+
+
 def ensure_backup():
-    """Creates a backup of /etc/hosts if it doesn't already exist."""
-    if not os.path.exists(BACKUP_PATH) and os.path.exists(HOSTS_PATH):
-        try:
-            shutil.copy2(HOSTS_PATH, BACKUP_PATH)
-        except Exception as e:
-            print(f"Warning: Could not create backup {BACKUP_PATH}: {e}", file=sys.stderr)
+    """Creates a backup of /etc/hosts if it doesn't already exist, strictly without following symlinks."""
+    if os.path.lexists(BACKUP_PATH):
+        if os.path.islink(BACKUP_PATH):
+            try:
+                os.unlink(BACKUP_PATH)
+            except Exception as e:
+                print(f"Warning: Could not remove symlink {BACKUP_PATH}: {e}", file=sys.stderr)
+                return
+        else:
+            return  # Clean backup already exists
+
+    if not os.path.exists(HOSTS_PATH) or os.path.islink(HOSTS_PATH):
+        return
+
+    try:
+        with open(HOSTS_PATH, "r", encoding="utf-8", errors="ignore") as src:
+            content = src.read()
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(BACKUP_PATH, flags, 0o644)
+        with open(fd, "w", encoding="utf-8") as dst:
+            dst.write(content)
+    except FileExistsError:
+        pass
+    except Exception as e:
+        print(f"Warning: Could not create backup {BACKUP_PATH}: {e}", file=sys.stderr)
 
 
 def get_status():
@@ -131,7 +164,11 @@ def apply_rules(rules_file: str):
 
             # Strip port or trailing dot
             domain = domain.rstrip(".")
-            if domain in ("localhost", "0.0.0.0", "broadcasthost"):
+            if (
+                domain in RESERVED_DOMAINS
+                or "." not in domain
+                or domain.endswith((".local", ".localhost", ".lan", ".internal", ".arpa"))
+            ):
                 continue
 
             # Validate domain format
@@ -160,6 +197,13 @@ def apply_rules(rules_file: str):
 
     new_content = clean_hosts + "\n".join(block_lines)
 
+    # Prevent symlink pre-creation attack on TEMP_PATH
+    if os.path.lexists(TEMP_PATH):
+        try:
+            os.unlink(TEMP_PATH)
+        except OSError:
+            pass
+
     # Atomic write with O_NOFOLLOW
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(TEMP_PATH, flags, 0o644)
@@ -187,6 +231,13 @@ def clear_rules():
         return
 
     clean_hosts = strip_omablock_block(content)
+
+    # Prevent symlink pre-creation attack on TEMP_PATH
+    if os.path.lexists(TEMP_PATH):
+        try:
+            os.unlink(TEMP_PATH)
+        except OSError:
+            pass
 
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(TEMP_PATH, flags, 0o644)

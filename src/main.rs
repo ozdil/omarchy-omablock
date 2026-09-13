@@ -115,6 +115,31 @@ pub fn validate_domain(raw: &str) -> Result<String, String> {
     }
 
     let labels: Vec<&str> = s.split('.').collect();
+    if labels.len() < 2 {
+        return Err("Domain must contain at least one dot separating label and TLD".to_string());
+    }
+
+    let last_label = labels[labels.len() - 1];
+    if matches!(last_label, "local" | "localhost" | "lan" | "internal" | "arpa" | "test" | "invalid") {
+        return Err(format!("Domain belongs to reserved local/internal TLD: .{}", last_label));
+    }
+
+    let reserved_names = [
+        "localhost",
+        "broadcasthost",
+        "local",
+        "ip6-localhost",
+        "ip6-loopback",
+        "ip6-allnodes",
+        "ip6-allrouters",
+        "ip6-allhosts",
+        "0.0.0.0",
+        "255.255.255.255",
+    ];
+    if reserved_names.contains(&s.as_str()) {
+        return Err(format!("Domain is a reserved system hostname: {}", s));
+    }
+
     for label in &labels {
         if label.is_empty() {
             return Err("Domain contains empty label (e.g. consecutive dots)".to_string());
@@ -328,11 +353,20 @@ fn load_all_rules() -> ParsedRules {
 
 fn is_system_hosts_active() -> bool {
     let hosts_path = "/etc/hosts";
-    if let Ok(content) = fs::read_to_string(hosts_path) {
-        content.contains("# --- BEGIN OMABLOCK MANAGED RULES ---")
-    } else {
-        false
+    if let Ok(file) = File::open(hosts_path) {
+        let reader = BufReader::new(file);
+        return is_system_hosts_active_from_reader(reader);
     }
+    false
+}
+
+pub fn is_system_hosts_active_from_reader<R: BufRead>(reader: R) -> bool {
+    for line in reader.lines().map_while(Result::ok) {
+        if line.contains("# --- BEGIN OMABLOCK MANAGED RULES ---") {
+            return true;
+        }
+    }
+    false
 }
 
 fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
@@ -426,7 +460,7 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
     };
 
     let deadline = Instant::now() + Duration::from_secs(8);
-    let _ = subproc::run_cmd_bounded(
+    let res = subproc::run_cmd_bounded(
         "sudo",
         &["-n", "/usr/local/bin/omablock-hosts-sync", "--apply", path_str],
         &[],
@@ -434,7 +468,12 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
         32768,
     );
 
-    active_domains.len()
+    if res.is_some() {
+        active_domains.len()
+    } else {
+        eprintln!("Warning: omablock-hosts-sync --apply failed or timed out");
+        0
+    }
 }
 
 fn run_verification_test(cfg: &mut OmaBlockConfig, rules: &ParsedRules) -> TestSummary {
@@ -554,6 +593,9 @@ fn update_blocklists_online(cfg: &mut OmaBlockConfig, rules: &mut ParsedRules) -
     let mut new_domains = HashMap::new();
 
     for url in urls {
+        // Ensure no pre-existing file or symlink exists before curl writes to it
+        let _ = fs::remove_file(&temp_download);
+
         let temp_str = match temp_download.to_str() {
             Some(s) => s,
             None => continue,
@@ -924,6 +966,21 @@ mod tests {
 
         let long_domain = "a".repeat(250) + ".com";
         assert!(validate_domain(&long_domain).is_err());
+
+        // Single label domains without dot
+        assert!(validate_domain("localhost").is_err());
+        assert!(validate_domain("router").is_err());
+
+        // Reserved local / mDNS TLDs
+        assert!(validate_domain("nas.local").is_err());
+        assert!(validate_domain("gateway.lan").is_err());
+        assert!(validate_domain("device.internal").is_err());
+        assert!(validate_domain("1.0.0.127.in-addr.arpa").is_err());
+
+        // Reserved system hostnames
+        assert!(validate_domain("broadcasthost").is_err());
+        assert!(validate_domain("0.0.0.0").is_err());
+        assert!(validate_domain("255.255.255.255").is_err());
     }
 
     #[test]
@@ -998,5 +1055,14 @@ mod tests {
         let json = serde_json::to_string(&cfg).unwrap();
         let loaded: OmaBlockConfig = serde_json::from_str(&json).unwrap();
         assert!(!loaded.doh_prevention);
+    }
+
+    #[test]
+    fn test_is_system_hosts_active_reader() {
+        let inactive = "127.0.0.1 localhost\n::1 localhost\n";
+        assert!(!is_system_hosts_active_from_reader(inactive.as_bytes()));
+
+        let active = "127.0.0.1 localhost\n# --- BEGIN OMABLOCK MANAGED RULES ---\n0.0.0.0 ad.com\n# --- END OMABLOCK MANAGED RULES ---\n";
+        assert!(is_system_hosts_active_from_reader(active.as_bytes()));
     }
 }
