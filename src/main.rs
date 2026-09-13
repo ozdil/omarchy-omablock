@@ -81,7 +81,7 @@ impl Default for OmaBlockConfig {
             last_test: None,
             auto_update: false,
             paused_until: None,
-            doh_prevention: true,
+            doh_prevention: false,
         }
     }
 }
@@ -417,26 +417,10 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
         active_domains.insert(bl.to_lowercase());
     }
 
-    // DoH Bypass Prevention: Force browsers (Firefox, Chrome) to obey system sinkhole rules
+    // DoH Bypass Prevention: Signal browsers (e.g. Firefox) to gracefully fall back to system sinkhole rules
     if cfg.doh_prevention {
         let doh_domains = [
-            "use-application-dns.net", // Firefox Canary: triggers automatic fallback to system DNS
-            "chrome.cloudflare-dns.com",
-            "cloudflare-dns.com",
-            "mozilla.cloudflare-dns.com",
-            "dns.google",
-            "dns.google.com",
-            "dns64.dns.google",
-            "dns.quad9.net",
-            "dns9.quad9.net",
-            "dns10.quad9.net",
-            "dns11.quad9.net",
-            "doh.opendns.com",
-            "doh.cleanbrowsing.org",
-            "dns.nextdns.io",
-            "doh.mullvad.net",
-            "dns.adguard.com",
-            "dns-family.adguard.com",
+            "use-application-dns.net", // Official Mozilla Canary domain: triggers automatic graceful fallback to system DNS
         ];
         for d in &doh_domains {
             active_domains.insert(d.to_string());
@@ -1050,11 +1034,11 @@ mod tests {
     #[test]
     fn test_doh_prevention_config() {
         let mut cfg = OmaBlockConfig::default();
-        assert!(cfg.doh_prevention);
-        cfg.doh_prevention = false;
+        assert!(!cfg.doh_prevention);
+        cfg.doh_prevention = true;
         let json = serde_json::to_string(&cfg).unwrap();
         let loaded: OmaBlockConfig = serde_json::from_str(&json).unwrap();
-        assert!(!loaded.doh_prevention);
+        assert!(loaded.doh_prevention);
     }
 
     #[test]
