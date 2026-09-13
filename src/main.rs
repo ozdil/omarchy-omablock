@@ -7,9 +7,13 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const BUILTIN_RULES: &str = include_str!("../assets/rules_builtin.txt");
+
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CategoriesConfig {
@@ -60,6 +64,10 @@ pub struct OmaBlockConfig {
     pub last_test: Option<TestSummary>,
     #[serde(default)]
     pub auto_update: bool,
+    #[serde(default)]
+    pub paused_until: Option<u64>,
+    #[serde(default = "default_true")]
+    pub doh_prevention: bool,
 }
 
 impl Default for OmaBlockConfig {
@@ -72,6 +80,8 @@ impl Default for OmaBlockConfig {
             last_updated: Some("Built-in Curated v1.0".to_string()),
             last_test: None,
             auto_update: false,
+            paused_until: None,
+            doh_prevention: true,
         }
     }
 }
@@ -89,6 +99,9 @@ pub struct StatusOutput {
     pub last_test: Option<TestSummary>,
     pub system_hosts_active: bool,
     pub auto_update: bool,
+    pub paused_until: Option<u64>,
+    pub pause_remaining_secs: Option<u64>,
+    pub doh_prevention: bool,
 }
 
 /// Validates that a string is a legitimate RFC 1035 domain name without shell/hosts injection
@@ -144,6 +157,31 @@ pub fn get_current_timestamp() -> String {
         }
     }
     "Recently".to_string()
+}
+
+pub fn get_now_unix() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn check_pause_expiry(cfg: &mut OmaBlockConfig, rules: &ParsedRules) -> bool {
+    if let Some(until) = cfg.paused_until {
+        let now = get_now_unix();
+        if now >= until {
+            cfg.paused_until = None;
+            cfg.enabled = true;
+            save_config(cfg);
+            let count = sync_system_hosts(cfg, rules);
+            send_notification(
+                "OmaBlock Shield: REACTIVATED",
+                &format!("Pause period ended. {} rules restored.", count),
+            );
+            return true;
+        }
+    }
+    false
 }
 
 fn get_state_dir() -> PathBuf {
@@ -345,6 +383,32 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
         active_domains.insert(bl.to_lowercase());
     }
 
+    // DoH Bypass Prevention: Force browsers (Firefox, Chrome) to obey system sinkhole rules
+    if cfg.doh_prevention {
+        let doh_domains = [
+            "use-application-dns.net", // Firefox Canary: triggers automatic fallback to system DNS
+            "chrome.cloudflare-dns.com",
+            "cloudflare-dns.com",
+            "mozilla.cloudflare-dns.com",
+            "dns.google",
+            "dns.google.com",
+            "dns64.dns.google",
+            "dns.quad9.net",
+            "dns9.quad9.net",
+            "dns10.quad9.net",
+            "dns11.quad9.net",
+            "doh.opendns.com",
+            "doh.cleanbrowsing.org",
+            "dns.nextdns.io",
+            "doh.mullvad.net",
+            "dns.adguard.com",
+            "dns-family.adguard.com",
+        ];
+        for d in &doh_domains {
+            active_domains.insert(d.to_string());
+        }
+    }
+
     let active_path = get_active_hosts_path();
     let mut buf = Vec::with_capacity(active_domains.len().saturating_mul(32));
     for d in &active_domains {
@@ -483,6 +547,8 @@ fn update_blocklists_online(cfg: &mut OmaBlockConfig, rules: &mut ParsedRules) -
     let urls = vec![
         "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
         "https://v.firebog.net/hosts/Easyprivacy.txt",
+        "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/pro.txt",
+        "https://v.firebog.net/hosts/AdguardDNS.txt",
     ];
 
     let mut new_domains = HashMap::new();
@@ -563,6 +629,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut cfg = load_config();
     let mut rules = load_all_rules();
+    let _ = check_pause_expiry(&mut cfg, &rules);
 
     if args.len() < 2 || args[1] == "--status" || args[1] == "--json" {
         let system_active = is_system_hosts_active();
@@ -571,6 +638,15 @@ fn main() {
         } else {
             0
         };
+
+        let now = get_now_unix();
+        let pause_remaining = cfg.paused_until.and_then(|u| {
+            if u > now {
+                Some(u - now)
+            } else {
+                None
+            }
+        });
 
         let output = StatusOutput {
             enabled: cfg.enabled,
@@ -584,6 +660,9 @@ fn main() {
             last_test: cfg.last_test.clone(),
             system_hosts_active: system_active,
             auto_update: cfg.auto_update,
+            paused_until: cfg.paused_until,
+            pause_remaining_secs: pause_remaining,
+            doh_prevention: cfg.doh_prevention,
         };
 
         if let Ok(json) = serde_json::to_string_pretty(&output) {
@@ -595,6 +674,7 @@ fn main() {
     match args[1].as_str() {
         "--enable" => {
             cfg.enabled = true;
+            cfg.paused_until = None;
             save_config(&cfg);
             let count = sync_system_hosts(&cfg, &rules);
             send_notification(
@@ -605,6 +685,7 @@ fn main() {
         }
         "--disable" => {
             cfg.enabled = false;
+            cfg.paused_until = None;
             save_config(&cfg);
             sync_system_hosts(&cfg, &rules);
             send_notification(
@@ -615,6 +696,7 @@ fn main() {
         }
         "--toggle" => {
             cfg.enabled = !cfg.enabled;
+            cfg.paused_until = None;
             save_config(&cfg);
             let count = sync_system_hosts(&cfg, &rules);
             if cfg.enabled {
@@ -755,8 +837,44 @@ fn main() {
                 println!("Auto-update on startup is disabled. Skipping.");
             }
         }
+        "--pause" => {
+            let mins: u64 = if args.len() > 2 {
+                args[2].parse().unwrap_or(5)
+            } else {
+                5
+            };
+            let now = get_now_unix();
+            cfg.paused_until = Some(now.saturating_add(mins.saturating_mul(60)));
+            cfg.enabled = false;
+            save_config(&cfg);
+            sync_system_hosts(&cfg, &rules);
+            send_notification(
+                "OmaBlock Shield: PAUSED",
+                &format!("AdBlocker paused for {} minutes", mins),
+            );
+            println!("OmaBlock paused for {} minutes.", mins);
+        }
+        "--resume" => {
+            cfg.paused_until = None;
+            cfg.enabled = true;
+            save_config(&cfg);
+            let count = sync_system_hosts(&cfg, &rules);
+            send_notification(
+                "OmaBlock Shield: ACTIVE",
+                &format!("Protection resumed ({} rules active)", count),
+            );
+            println!("OmaBlock protection resumed.");
+        }
+        "--toggle-doh-guard" => {
+            cfg.doh_prevention = !cfg.doh_prevention;
+            save_config(&cfg);
+            if cfg.enabled {
+                sync_system_hosts(&cfg, &rules);
+            }
+            println!("Browser DoH bypass prevention set to: {}", cfg.doh_prevention);
+        }
         _ => {
-            eprintln!("Usage: omablock-engine [--status|--enable|--disable|--toggle|--toggle-category <cat>|--whitelist-add <d>|--whitelist-remove <d>|--blacklist-add <d>|--blacklist-remove <d>|--toggle-auto-update|--set-auto-update <bool>|--startup|--test|--update|--flush]");
+            eprintln!("Usage: omablock-engine [--status|--enable|--disable|--toggle|--toggle-category <cat>|--whitelist-add <d>|--whitelist-remove <d>|--blacklist-add <d>|--blacklist-remove <d>|--toggle-auto-update|--set-auto-update <bool>|--pause <mins>|--resume|--toggle-doh-guard|--startup|--test|--update|--flush]");
         }
     }
 }
@@ -842,5 +960,43 @@ mod tests {
         let json = serde_json::to_string(&cfg).unwrap();
         let loaded: OmaBlockConfig = serde_json::from_str(&json).unwrap();
         assert!(loaded.auto_update);
+    }
+
+    #[test]
+    fn test_pause_expiry_logic() {
+        let mut cfg = OmaBlockConfig::default();
+        assert!(cfg.enabled);
+        assert!(cfg.paused_until.is_none());
+
+        // Set pause in the future
+        let now = get_now_unix();
+        cfg.paused_until = Some(now + 300);
+        cfg.enabled = false;
+
+        let parsed = ParsedRules {
+            all_rules: HashMap::new(),
+            category_counts: HashMap::new(),
+        };
+
+        // Not yet expired
+        assert!(!check_pause_expiry(&mut cfg, &parsed));
+        assert!(!cfg.enabled);
+        assert!(cfg.paused_until.is_some());
+
+        // Simulate expired
+        cfg.paused_until = Some(now.saturating_sub(10));
+        assert!(check_pause_expiry(&mut cfg, &parsed));
+        assert!(cfg.enabled);
+        assert!(cfg.paused_until.is_none());
+    }
+
+    #[test]
+    fn test_doh_prevention_config() {
+        let mut cfg = OmaBlockConfig::default();
+        assert!(cfg.doh_prevention);
+        cfg.doh_prevention = false;
+        let json = serde_json::to_string(&cfg).unwrap();
+        let loaded: OmaBlockConfig = serde_json::from_str(&json).unwrap();
+        assert!(!loaded.doh_prevention);
     }
 }

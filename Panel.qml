@@ -36,6 +36,8 @@ Panel {
   property string lastUpdated: "Built-in Curated v1.0"
   property bool autoUpdate: false
   property bool startupUpdateChecked: false
+  property int pauseRemainingSecs: 0
+  property bool dohPrevention: true
 
   property bool isTesting: false
   property bool isUpdating: false
@@ -63,6 +65,29 @@ Panel {
   function toggleAutoUpdate() {
     actionProc.command = [root.resolveEnginePath(), "--toggle-auto-update"]
     actionProc.running = true
+  }
+
+  function pauseShield(minutes) {
+    actionProc.command = [root.resolveEnginePath(), "--pause", String(minutes)]
+    actionProc.running = true
+    root.showToast("Shield paused for " + minutes + " minutes")
+  }
+
+  function resumeShield() {
+    actionProc.command = [root.resolveEnginePath(), "--resume"]
+    actionProc.running = true
+    root.showToast("Shield protection resumed")
+  }
+
+  function toggleDohGuard() {
+    actionProc.command = [root.resolveEnginePath(), "--toggle-doh-guard"]
+    actionProc.running = true
+  }
+
+  function formatRemaining(secs) {
+    var m = Math.floor(secs / 60)
+    var s = secs % 60
+    return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s
   }
 
   function toggleMaster() {
@@ -168,6 +193,8 @@ Panel {
           root.blacklist = d.blacklist || []
           root.lastUpdated = d.last_updated || "Built-in Curated v1.0"
           root.autoUpdate = !!d.auto_update
+          root.pauseRemainingSecs = d.pause_remaining_secs || 0
+          root.dohPrevention = d.doh_prevention !== false
 
           if (!root.startupUpdateChecked) {
             root.startupUpdateChecked = true
@@ -238,6 +265,21 @@ Panel {
     }
   }
 
+  Timer {
+    id: pauseCountdownTimer
+    interval: 1000
+    repeat: true
+    running: root.pauseRemainingSecs > 0
+    onTriggered: {
+      if (root.pauseRemainingSecs > 1) {
+        root.pauseRemainingSecs -= 1
+      } else {
+        root.pauseRemainingSecs = 0
+        root.refresh()
+      }
+    }
+  }
+
   Component.onDestruction: {
     if (statusProc.running) statusProc.running = false
     if (actionProc.running) actionProc.running = false
@@ -246,6 +288,7 @@ Panel {
     if (autoRefreshTimer.running) autoRefreshTimer.running = false
     if (toastTimer.running) toastTimer.running = false
     if (startupUpdateTimer.running) startupUpdateTimer.running = false
+    if (pauseCountdownTimer.running) pauseCountdownTimer.running = false
   }
   Timer {
     id: autoRefreshTimer
@@ -410,6 +453,51 @@ Panel {
               font.pixelSize: Style.font.caption
               color: Color.foreground
               font.bold: true
+            }
+          }
+        }
+
+        // ---------- Paused Countdown Banner ----------
+        BorderSurface {
+          width: parent.width
+          visible: root.pauseRemainingSecs > 0
+          radius: Style.cornerRadius
+          color: Style.controlFill(false, false, Color.foreground, "#f59e0b")
+          borderSpec: Border.controlSpec("focus", Color.foreground, "#f59e0b")
+          implicitHeight: Style.space(42)
+
+          RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(12)
+            anchors.rightMargin: Style.space(8)
+            spacing: Style.space(8)
+
+            Text {
+              textFormat: Text.PlainText
+              text: ""
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              color: "#f59e0b"
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              Layout.fillWidth: true
+              text: "Protection Paused (" + root.formatRemaining(root.pauseRemainingSecs) + ")"
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              color: Color.foreground
+              font.bold: true
+              elide: Text.ElideRight
+            }
+
+            Button {
+              implicitHeight: Style.space(26)
+              horizontalPadding: Style.space(8)
+              bordered: true
+              text: "Resume"
+              fontSize: Style.font.caption - 1
+              onClicked: root.resumeShield()
             }
           }
         }
@@ -945,6 +1033,45 @@ Panel {
           }
         }
 
+        // Quick Pause Buttons Row
+        RowLayout {
+          width: parent.width
+          spacing: Style.space(8)
+
+          Button {
+            Layout.fillWidth: true
+            implicitHeight: Style.space(30)
+            horizontalPadding: Style.space(6)
+            bordered: true
+            iconText: ""
+            text: "Pause 5m"
+            fontSize: Style.font.caption - 1
+            onClicked: root.pauseShield(5)
+          }
+
+          Button {
+            Layout.fillWidth: true
+            implicitHeight: Style.space(30)
+            horizontalPadding: Style.space(6)
+            bordered: true
+            iconText: ""
+            text: "Pause 15m"
+            fontSize: Style.font.caption - 1
+            onClicked: root.pauseShield(15)
+          }
+
+          Button {
+            Layout.fillWidth: true
+            implicitHeight: Style.space(30)
+            horizontalPadding: Style.space(6)
+            bordered: true
+            iconText: ""
+            text: "Pause 1h"
+            fontSize: Style.font.caption - 1
+            onClicked: root.pauseShield(60)
+          }
+        }
+
         // Auto-Update on Startup Toggle Card
         BorderSurface {
           width: parent.width
@@ -1006,6 +1133,76 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: root.autoUpdate ? "Lists update automatically when your session starts" : "Automatic update on startup is disabled"
+              color: Color.muted
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption - 1
+              elide: Text.ElideRight
+              width: parent.width
+            }
+          }
+        }
+
+        // Browser DoH Guard Toggle Card
+        BorderSurface {
+          width: parent.width
+          implicitHeight: Style.space(48)
+          radius: Style.cornerRadius
+          color: Style.controlFill(false, mouseDoh.containsMouse, Color.foreground, Color.accent)
+          borderSpec: Border.controlSpec(mouseDoh.containsMouse ? "hover-cursor" : "normal", Color.foreground, Color.accent)
+
+          MouseArea {
+            id: mouseDoh
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: root.toggleDohGuard()
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            id: iconDoh
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(12)
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.space(22)
+            horizontalAlignment: Text.AlignHCenter
+            text: "󰒃"
+            font.family: Style.font.family
+            font.pixelSize: Style.font.icon
+            color: root.dohPrevention ? Color.accent : Color.muted
+          }
+
+          ToggleSwitch {
+            id: toggleDoh
+            anchors.right: parent.right
+            anchors.rightMargin: Style.space(12)
+            anchors.verticalCenter: parent.verticalCenter
+            checked: root.dohPrevention
+            accent: Color.accent
+            onToggled: root.toggleDohGuard()
+          }
+
+          Column {
+            anchors.left: iconDoh.right
+            anchors.leftMargin: Style.space(10)
+            anchors.right: toggleDoh.left
+            anchors.rightMargin: Style.space(10)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(1)
+
+            Text {
+              textFormat: Text.PlainText
+              text: "Browser DoH Bypass Guard"
+              color: Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              font.bold: true
+              elide: Text.ElideRight
+              width: parent.width
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              text: root.dohPrevention ? "Canary shield forces Firefox & Chrome to obey hosts" : "Browsers may bypass sinkhole via encrypted DoH"
               color: Color.muted
               font.family: Style.font.family
               font.pixelSize: Style.font.caption - 1
