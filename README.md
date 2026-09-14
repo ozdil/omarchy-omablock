@@ -1,5 +1,7 @@
 # OmaBlock - Zero-Latency AdBlocker and Privacy Shield for Omarchy Linux
 
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-Support_Development-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/ozdil)
+
 Kernel-level ad, tracker, and telemetry sinkhole plugin engineered for Omarchy Linux.
 
 Author: Ozan Ozdil (ozdil)  
@@ -146,6 +148,14 @@ OmaBlock complies strictly with the Omarchy Linux Security Standards (AGENTS.md)
 - Subprocess Isolation: Process executions run in isolated process groups (`cmd.process_group(0)`) with monotonic deadlines and 64 KiB buffer caps.
 - Input Sanitization: Domain inputs are strictly validated against domain name standards to prevent configuration poisoning.
 - Plain Text UI: All dynamic text rendered in QML components utilizes `textFormat: Text.PlainText` to prevent script and markup injection.
+
+---
+
+## Support & Sponsorship
+
+If you find OmaBlock useful and want to support independent Linux security tools:
+
+<a href="https://buymeacoffee.com/ozdil" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 50px !important;width: 180px !important;" ></a>
 
 ---
 
