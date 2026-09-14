@@ -34,8 +34,6 @@ Panel {
   property var whitelist: []
   property var blacklist: []
   property string lastUpdated: "Built-in Curated v1.0"
-  property bool autoUpdate: false
-  property bool startupUpdateChecked: false
   property int pauseRemainingSecs: 0
   property bool dohPrevention: false
 
@@ -46,6 +44,12 @@ Panel {
   property real testLatency: 0.0
 
   property string toastMsg: ""
+
+  onOpenedChanged: {
+    if (root.opened) {
+      root.refresh()
+    }
+  }
 
   function resolveEnginePath() {
     return Qt.resolvedUrl("omablock-engine").toString().replace(/^file:\/\//, "")
@@ -60,11 +64,6 @@ Panel {
     if (!statusProc.running) {
       statusProc.running = true
     }
-  }
-
-  function toggleAutoUpdate() {
-    actionProc.command = [root.resolveEnginePath(), "--toggle-auto-update"]
-    actionProc.running = true
   }
 
   function pauseShield(minutes) {
@@ -192,16 +191,8 @@ Panel {
           root.whitelist = d.whitelist || []
           root.blacklist = d.blacklist || []
           root.lastUpdated = d.last_updated || "Built-in Curated v1.0"
-          root.autoUpdate = !!d.auto_update
           root.pauseRemainingSecs = d.pause_remaining_secs || 0
           root.dohPrevention = !!d.doh_prevention
-
-          if (!root.startupUpdateChecked) {
-            root.startupUpdateChecked = true
-            if (root.autoUpdate) {
-              startupUpdateTimer.start()
-            }
-          }
 
           if (d.last_test) {
             root.testSuccess = !!d.last_test.success
@@ -255,17 +246,6 @@ Panel {
   }
 
   Timer {
-    id: startupUpdateTimer
-    interval: 8000
-    repeat: false
-    onTriggered: {
-      if (root.autoUpdate && !root.isUpdating) {
-        root.updateBlocklists()
-      }
-    }
-  }
-
-  Timer {
     id: pauseCountdownTimer
     interval: 1000
     repeat: true
@@ -285,17 +265,8 @@ Panel {
     if (actionProc.running) actionProc.running = false
     if (testProc.running) testProc.running = false
     if (updateProc.running) updateProc.running = false
-    if (autoRefreshTimer.running) autoRefreshTimer.running = false
     if (toastTimer.running) toastTimer.running = false
-    if (startupUpdateTimer.running) startupUpdateTimer.running = false
     if (pauseCountdownTimer.running) pauseCountdownTimer.running = false
-  }
-  Timer {
-    id: autoRefreshTimer
-    interval: 15000
-    repeat: true
-    running: root.opened
-    onTriggered: root.refresh()
   }
 
   Component.onCompleted: refresh()
@@ -1069,76 +1040,6 @@ Panel {
             text: "Pause 1h"
             fontSize: Style.font.caption - 1
             onClicked: root.pauseShield(60)
-          }
-        }
-
-        // Auto-Update on Startup Toggle Card
-        BorderSurface {
-          width: parent.width
-          implicitHeight: Style.space(48)
-          radius: Style.cornerRadius
-          color: Style.controlFill(false, mouseAutoUpdate.containsMouse, Color.foreground, Color.accent)
-          borderSpec: Border.controlSpec(mouseAutoUpdate.containsMouse ? "hover-cursor" : "normal", Color.foreground, Color.accent)
-
-          MouseArea {
-            id: mouseAutoUpdate
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: root.toggleAutoUpdate()
-          }
-
-          Text {
-            textFormat: Text.PlainText
-            id: iconAutoUpdate
-            anchors.left: parent.left
-            anchors.leftMargin: Style.space(12)
-            anchors.verticalCenter: parent.verticalCenter
-            width: Style.space(22)
-            horizontalAlignment: Text.AlignHCenter
-            text: ""
-            font.family: Style.font.family
-            font.pixelSize: Style.font.icon
-            color: root.autoUpdate ? Color.accent : Color.muted
-          }
-
-          ToggleSwitch {
-            id: toggleAutoUpdate
-            anchors.right: parent.right
-            anchors.rightMargin: Style.space(12)
-            anchors.verticalCenter: parent.verticalCenter
-            checked: root.autoUpdate
-            accent: Color.accent
-            onToggled: root.toggleAutoUpdate()
-          }
-
-          Column {
-            anchors.left: iconAutoUpdate.right
-            anchors.leftMargin: Style.space(10)
-            anchors.right: toggleAutoUpdate.left
-            anchors.rightMargin: Style.space(10)
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(1)
-
-            Text {
-              textFormat: Text.PlainText
-              text: "Auto-Update on Startup"
-              color: Color.foreground
-              font.family: Style.font.family
-              font.pixelSize: Style.font.body
-              font.bold: true
-              elide: Text.ElideRight
-              width: parent.width
-            }
-
-            Text {
-              textFormat: Text.PlainText
-              text: root.autoUpdate ? "Lists update automatically when your session starts" : "Automatic update on startup is disabled"
-              color: Color.muted
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption - 1
-              elide: Text.ElideRight
-              width: parent.width
-            }
           }
         }
 
