@@ -44,6 +44,7 @@ Panel {
   property real testLatency: 0.0
 
   property string toastMsg: ""
+  readonly property string fontFamily: (root.bar && root.bar.fontFamily) ? root.bar.fontFamily : ((typeof Style !== "undefined" && Style.font && Style.font.family) ? Style.font.family : "JetBrainsMono Nerd Font")
 
   onOpenedChanged: {
     if (root.opened) {
