@@ -21,15 +21,18 @@ Panel {
   property int totalRules: 0
   property bool systemHostsActive: false
 
+  property string blockingLevel: "aggressive"
   property bool catAds: true
   property bool catTelemetry: true
   property bool catMalware: true
   property bool catSocial: false
+  property bool catPopups: true
 
   property int countAds: 0
   property int countTelemetry: 0
   property int countMalware: 0
   property int countSocial: 0
+  property int countPopups: 0
 
   property var whitelist: []
   property var blacklist: []
@@ -44,7 +47,7 @@ Panel {
   property real testLatency: 0.0
 
   property string toastMsg: ""
-  readonly property string fontFamily: (root.bar && root.bar.fontFamily) ? root.bar.fontFamily : ((typeof Style !== "undefined" && Style.font && Style.font.family) ? Style.font.family : "JetBrainsMono Nerd Font")
+  readonly property string fontFamily: (root.bar && root.bar.fontFamily) ? root.bar.fontFamily : ((typeof Style !== "undefined" && Style.font && Style.font.family) ? Style.font.family : "JetBrainsMono Nerd Font, JetBrains Mono, monospace")
 
   onOpenedChanged: {
     if (root.opened) {
@@ -65,6 +68,13 @@ Panel {
     if (!statusProc.running) {
       statusProc.running = true
     }
+  }
+
+  function setBlockingLevel(lvl) {
+    actionProc.command = [root.resolveEnginePath(), "--set-level", lvl]
+    actionProc.running = true
+    var label = lvl === "ultimate" ? "Maksimum (Anti-Popup)" : (lvl === "aggressive" ? "Gelişmiş" : "Standart")
+    root.showToast("Engelleme seviyesi: " + label)
   }
 
   function pauseShield(minutes) {
@@ -159,6 +169,7 @@ Panel {
     function toggle() { root.toggle() }
     function refresh() { root.refresh() }
     function test() { root.runTest() }
+    function setLevel(lvl: string) { root.setBlockingLevel(lvl) }
   }
 
   Process {
@@ -171,6 +182,7 @@ Panel {
           var cleanText = String(text || "").slice(0, 131072)
           var d = JSON.parse(cleanText)
           root.isEnabled = !!d.enabled
+          root.blockingLevel = d.blocking_level || "aggressive"
           root.activeRules = d.active_rules || 0
           root.totalRules = d.total_rules || 0
           root.systemHostsActive = !!d.system_hosts_active
@@ -180,6 +192,7 @@ Panel {
             root.catTelemetry = !!d.categories.telemetry
             root.catMalware = !!d.categories.malware
             root.catSocial = !!d.categories.social
+            root.catPopups = !!d.categories.popups
           }
 
           if (d.category_counts) {
@@ -187,6 +200,7 @@ Panel {
             root.countTelemetry = d.category_counts.telemetry || 0
             root.countMalware = d.category_counts.malware || 0
             root.countSocial = d.category_counts.social || 0
+            root.countPopups = d.category_counts.popups || 0
           }
 
           root.whitelist = d.whitelist || []
@@ -326,7 +340,7 @@ Panel {
             textFormat: Text.PlainText
             text: ""
             color: (root.isEnabled && root.systemHostsActive) ? Color.accent : Color.muted
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.family: root.fontFamily
             font.pixelSize: Style.font.display
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
@@ -348,7 +362,7 @@ Panel {
                 textFormat: Text.PlainText
                 text: "OmaBlock"
                 color: root.bar ? root.bar.foreground : Color.foreground
-                font.family: root.bar ? root.bar.fontFamily : Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.title
                 font.bold: true
               }
@@ -368,7 +382,7 @@ Panel {
                   anchors.centerIn: parent
                   text: (root.isEnabled && root.systemHostsActive) ? "ACTIVE • PROTECTED" : "SHIELD DISABLED"
                   color: (root.isEnabled && root.systemHostsActive) ? Color.accent : Color.muted
-                  font.family: Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.caption - 1
                   font.bold: true
                 }
@@ -379,7 +393,7 @@ Panel {
               textFormat: Text.PlainText
               text: "Kernel-level zero-latency ad and tracker shield"
               color: Color.muted
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               elide: Text.ElideRight
               width: parent.width
@@ -412,7 +426,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: ""
-              font.family: Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.body
               color: Color.accent
             }
@@ -421,7 +435,7 @@ Panel {
               textFormat: Text.PlainText
               id: toastLabel
               text: root.toastMsg
-              font.family: Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               color: Color.foreground
               font.bold: true
@@ -447,7 +461,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: ""
-              font.family: Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.body
               color: "#f59e0b"
             }
@@ -456,7 +470,7 @@ Panel {
               textFormat: Text.PlainText
               Layout.fillWidth: true
               text: "Protection Paused (" + root.formatRemaining(root.pauseRemainingSecs) + ")"
-              font.family: Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               color: Color.foreground
               font.bold: true
@@ -498,7 +512,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: ""
-                  font.family: Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.body
                   color: Color.accent
                 }
@@ -506,7 +520,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: root.activeRules > 0 ? root.activeRules.toLocaleString() : (root.isEnabled ? "79,561" : "0")
-                  font.family: Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.subtitle
                   font.bold: true
                   color: Color.foreground
@@ -517,7 +531,7 @@ Panel {
                 textFormat: Text.PlainText
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Blocked Rules"
-                font.family: Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
                 color: Color.muted
               }
@@ -543,7 +557,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: ""
-                  font.family: Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.body
                   color: Color.accent
                 }
@@ -551,7 +565,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: "< 0.1ms"
-                  font.family: Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.subtitle
                   font.bold: true
                   color: Color.foreground
@@ -562,7 +576,7 @@ Panel {
                 textFormat: Text.PlainText
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Sinkhole Latency"
-                font.family: Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
                 color: Color.muted
               }
@@ -588,7 +602,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: "󰒃"
-                  font.family: Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.body
                   color: (root.isEnabled && root.systemHostsActive) ? Color.accent : Color.muted
                 }
@@ -596,7 +610,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: (root.isEnabled && root.systemHostsActive) ? "Active" : "Standby"
-                  font.family: Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.subtitle
                   font.bold: true
                   color: Color.foreground
@@ -607,10 +621,184 @@ Panel {
                 textFormat: Text.PlainText
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Enforced DNS"
-                font.family: Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
                 color: Color.muted
               }
+            }
+          }
+        }
+
+        PanelSeparator {}
+
+        // ---------- Blocking Level Profile Section ----------
+        PanelSectionHeader {
+          text: "ENGELLEME SEVİYESİ"
+          fontFamily: root.fontFamily
+        }
+
+        RowLayout {
+          width: parent.width
+          spacing: Style.space(8)
+
+          // 1. Standart
+          BorderSurface {
+            Layout.fillWidth: true
+            implicitHeight: Style.space(38)
+            radius: Style.cornerRadius
+            color: root.blockingLevel === "standard"
+                   ? Style.selectedFillFor(Color.foreground, Color.accent)
+                   : Style.controlFill(false, mouseStd.containsMouse, Color.foreground, Color.accent)
+            borderSpec: Border.controlSpec(root.blockingLevel === "standard" ? "selected" : (mouseStd.containsMouse ? "hover-cursor" : "normal"), Color.foreground, Color.accent)
+
+            MouseArea {
+              id: mouseStd
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.setBlockingLevel("standard")
+            }
+
+            Row {
+              anchors.centerIn: parent
+              spacing: Style.space(6)
+
+              Text {
+                textFormat: Text.PlainText
+                text: ""
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption - 2
+                color: root.blockingLevel === "standard" ? Color.accent : Color.muted
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: "Standart"
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: root.blockingLevel === "standard"
+                color: root.blockingLevel === "standard" ? Color.foreground : Color.muted
+              }
+            }
+          }
+
+          // 2. Gelişmiş
+          BorderSurface {
+            Layout.fillWidth: true
+            implicitHeight: Style.space(38)
+            radius: Style.cornerRadius
+            color: root.blockingLevel === "aggressive"
+                   ? Style.selectedFillFor(Color.foreground, Color.accent)
+                   : Style.controlFill(false, mouseAgg.containsMouse, Color.foreground, Color.accent)
+            borderSpec: Border.controlSpec(root.blockingLevel === "aggressive" ? "selected" : (mouseAgg.containsMouse ? "hover-cursor" : "normal"), Color.foreground, Color.accent)
+
+            MouseArea {
+              id: mouseAgg
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.setBlockingLevel("aggressive")
+            }
+
+            Row {
+              anchors.centerIn: parent
+              spacing: Style.space(6)
+
+              Text {
+                textFormat: Text.PlainText
+                text: ""
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption - 2
+                color: root.blockingLevel === "aggressive" ? Color.accent : Color.muted
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: "Gelişmiş"
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: root.blockingLevel === "aggressive"
+                color: root.blockingLevel === "aggressive" ? Color.foreground : Color.muted
+              }
+            }
+          }
+
+          // 3. Maksimum (Anti-Popup)
+          BorderSurface {
+            Layout.fillWidth: true
+            implicitHeight: Style.space(38)
+            radius: Style.cornerRadius
+            color: root.blockingLevel === "ultimate"
+                   ? Style.selectedFillFor(Color.foreground, Color.accent)
+                   : Style.controlFill(false, mouseUlt.containsMouse, Color.foreground, Color.accent)
+            borderSpec: Border.controlSpec(root.blockingLevel === "ultimate" ? "selected" : (mouseUlt.containsMouse ? "hover-cursor" : "normal"), Color.foreground, Color.accent)
+
+            MouseArea {
+              id: mouseUlt
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.setBlockingLevel("ultimate")
+            }
+
+            Row {
+              anchors.centerIn: parent
+              spacing: Style.space(6)
+
+              Text {
+                textFormat: Text.PlainText
+                text: ""
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption - 2
+                color: root.blockingLevel === "ultimate" ? Color.accent : Color.muted
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: "Maksimum"
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: root.blockingLevel === "ultimate"
+                color: root.blockingLevel === "ultimate" ? Color.foreground : Color.muted
+              }
+            }
+          }
+        }
+
+        // Level Description Banner
+        BorderSurface {
+          width: parent.width
+          implicitHeight: Style.space(34)
+          radius: Style.cornerRadius
+          color: Style.controlFill(false, false, Color.foreground, Color.accent)
+          borderSpec: Border.controlSpec("normal", Color.foreground, Color.accent)
+
+          RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: Style.space(10)
+            anchors.rightMargin: Style.space(10)
+            spacing: Style.space(6)
+
+            Text {
+              textFormat: Text.PlainText
+              text: root.blockingLevel === "ultimate" ? "" : (root.blockingLevel === "aggressive" ? "" : "")
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              color: Color.accent
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              Layout.fillWidth: true
+              text: root.blockingLevel === "ultimate"
+                    ? "Maksimum Kalkan: Pop-up reklamlar, açılır pencereler ve yönlendirmeler tamamen engellenir."
+                    : (root.blockingLevel === "aggressive"
+                       ? "Gelişmiş Kalkan: Reklamlar, davranışsal takipçiler, pop-uplar ve telemetri engellenir."
+                       : "Standart Kalkan: Yalnızca temel reklam afişleri ve bilinen zararlı yazılımlar engellenir.")
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption - 1
+              color: Color.foreground
+              elide: Text.ElideRight
             }
           }
         }
@@ -650,7 +838,7 @@ Panel {
               width: Style.space(22)
               horizontalAlignment: Text.AlignHCenter
               text: ""
-              font.family: Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.icon
               color: root.catAds ? Color.accent : Color.muted
             }
@@ -677,7 +865,7 @@ Panel {
                 textFormat: Text.PlainText
                 text: "Ads & Commercial Banners"
                 color: Color.foreground
-                font.family: Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.body
                 font.bold: true
                 elide: Text.ElideRight
@@ -688,7 +876,7 @@ Panel {
                 textFormat: Text.PlainText
                 text: (root.countAds > 0 ? root.countAds.toLocaleString() : "75,416") + " domains • Popups, video ads, syndication"
                 color: Color.muted
-                font.family: Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
                 elide: Text.ElideRight
                 width: parent.width
@@ -720,7 +908,7 @@ Panel {
               width: Style.space(22)
               horizontalAlignment: Text.AlignHCenter
               text: "󰈉"
-              font.family: Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.icon
               color: root.catTelemetry ? Color.accent : Color.muted
             }
@@ -747,7 +935,7 @@ Panel {
                 textFormat: Text.PlainText
                 text: "Telemetry & Surveillance"
                 color: Color.foreground
-                font.family: Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.body
                 font.bold: true
                 elide: Text.ElideRight
@@ -758,7 +946,7 @@ Panel {
                 textFormat: Text.PlainText
                 text: (root.countTelemetry > 0 ? root.countTelemetry.toLocaleString() : "3,666") + " domains • OS metrics, analytics, crash logs"
                 color: Color.muted
-                font.family: Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
                 elide: Text.ElideRight
                 width: parent.width
@@ -790,7 +978,7 @@ Panel {
               width: Style.space(22)
               horizontalAlignment: Text.AlignHCenter
               text: ""
-              font.family: Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.icon
               color: root.catMalware ? Color.accent : Color.muted
             }
@@ -817,7 +1005,7 @@ Panel {
                 textFormat: Text.PlainText
                 text: "Malware & Phishing"
                 color: Color.foreground
-                font.family: Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.body
                 font.bold: true
                 elide: Text.ElideRight
@@ -828,7 +1016,7 @@ Panel {
                 textFormat: Text.PlainText
                 text: (root.countMalware > 0 ? root.countMalware.toLocaleString() : "449") + " domains • Scams, botnets, crypto miners"
                 color: Color.muted
-                font.family: Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
                 elide: Text.ElideRight
                 width: parent.width
@@ -860,7 +1048,7 @@ Panel {
               width: Style.space(22)
               horizontalAlignment: Text.AlignHCenter
               text: ""
-              font.family: Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.icon
               color: root.catSocial ? Color.accent : Color.muted
             }
@@ -887,7 +1075,7 @@ Panel {
                 textFormat: Text.PlainText
                 text: "Social Network Trackers"
                 color: Color.foreground
-                font.family: Style.font.family
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.body
                 font.bold: true
                 elide: Text.ElideRight
@@ -898,7 +1086,77 @@ Panel {
                 textFormat: Text.PlainText
                 text: (root.countSocial > 0 ? root.countSocial.toLocaleString() : "30") + " domains • Facebook pixel, TikTok tracking"
                 color: Color.muted
-                font.family: Style.font.family
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption - 1
+                elide: Text.ElideRight
+                width: parent.width
+              }
+            }
+          }
+
+          // 5. Pop-ups & Redirects
+          BorderSurface {
+            width: parent.width
+            implicitHeight: Style.space(48)
+            radius: Style.cornerRadius
+            color: Style.controlFill(false, mousePopup.containsMouse, Color.foreground, Color.accent)
+            borderSpec: Border.controlSpec(mousePopup.containsMouse ? "hover-cursor" : "normal", Color.foreground, Color.accent)
+
+            MouseArea {
+              id: mousePopup
+              anchors.fill: parent
+              hoverEnabled: true
+              onClicked: root.toggleCategory("popups")
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              id: iconPopup
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(12)
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(22)
+              horizontalAlignment: Text.AlignHCenter
+              text: ""
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.icon
+              color: root.catPopups ? Color.accent : Color.muted
+            }
+
+            ToggleSwitch {
+              id: togglePopup
+              anchors.right: parent.right
+              anchors.rightMargin: Style.space(12)
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.catPopups
+              accent: Color.accent
+              onToggled: root.toggleCategory("popups")
+            }
+
+            Column {
+              anchors.left: iconPopup.right
+              anchors.leftMargin: Style.space(10)
+              anchors.right: togglePopup.left
+              anchors.rightMargin: Style.space(10)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(1)
+
+              Text {
+                textFormat: Text.PlainText
+                text: "Pop-up & Açılır Pencere Kalkanı"
+                color: Color.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                font.bold: true
+                elide: Text.ElideRight
+                width: parent.width
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: (root.countPopups > 0 ? root.countPopups.toLocaleString() : "50,085") + " alan adı • Pop-up, pop-under, yönlendirmeler"
+                color: Color.muted
+                font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
                 elide: Text.ElideRight
                 width: parent.width
@@ -930,7 +1188,7 @@ Panel {
             width: Style.space(22)
             horizontalAlignment: Text.AlignHCenter
             text: root.isTesting ? "" : (root.testSuccess ? "" : "")
-            font.family: Style.font.family
+            font.family: root.fontFamily
             font.pixelSize: Style.font.icon
             color: root.isTesting ? Color.foreground : (root.testSuccess ? Color.accent : Color.muted)
           }
@@ -947,7 +1205,7 @@ Panel {
               textFormat: Text.PlainText
               text: root.isTesting ? "Resolving test ad domains..." : (root.testSuccess ? "Sinkhole Verified & Active" : "Shield Verification Pending")
               color: Color.foreground
-              font.family: Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.body
               font.bold: true
               elide: Text.ElideRight
@@ -958,7 +1216,7 @@ Panel {
               textFormat: Text.PlainText
               text: root.testMessage ? root.testMessage : "Test known ad servers (doubleclick.net, pagead2) for 0.0.0.0 sinkhole."
               color: Color.muted
-              font.family: Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.caption - 1
               elide: Text.ElideRight
               width: parent.width
@@ -1068,7 +1326,7 @@ Panel {
             width: Style.space(22)
             horizontalAlignment: Text.AlignHCenter
             text: "󰒃"
-            font.family: Style.font.family
+            font.family: root.fontFamily
             font.pixelSize: Style.font.icon
             color: root.dohPrevention ? Color.accent : Color.muted
           }
@@ -1095,7 +1353,7 @@ Panel {
               textFormat: Text.PlainText
               text: "Browser DoH Bypass Guard"
               color: Color.foreground
-              font.family: Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.body
               font.bold: true
               elide: Text.ElideRight
@@ -1106,7 +1364,7 @@ Panel {
               textFormat: Text.PlainText
               text: root.dohPrevention ? "Mozilla canary domain signals browsers to obey system hosts" : "Browsers may bypass sinkhole via encrypted DoH"
               color: Color.muted
-              font.family: Style.font.family
+              font.family: root.fontFamily
               font.pixelSize: Style.font.caption - 1
               elide: Text.ElideRight
               width: parent.width
@@ -1205,7 +1463,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: " Allow:"
-                  font.family: Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.caption - 1
                   color: Color.accent
                   font.bold: true
@@ -1215,7 +1473,7 @@ Panel {
                   textFormat: Text.PlainText
                   Layout.fillWidth: true
                   text: modelData
-                  font.family: Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                   color: Color.foreground
                   elide: Text.ElideRight
@@ -1231,7 +1489,7 @@ Panel {
                     textFormat: Text.PlainText
                     anchors.centerIn: parent
                     text: ""
-                    font.family: Style.font.family
+                    font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     color: Color.muted
                   }
@@ -1258,7 +1516,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: " Block:"
-                  font.family: Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.caption - 1
                   color: Color.foreground
                   font.bold: true
@@ -1268,7 +1526,7 @@ Panel {
                   textFormat: Text.PlainText
                   Layout.fillWidth: true
                   text: modelData
-                  font.family: Style.font.family
+                  font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                   color: Color.foreground
                   elide: Text.ElideRight
@@ -1284,7 +1542,7 @@ Panel {
                     textFormat: Text.PlainText
                     anchors.centerIn: parent
                     text: ""
-                    font.family: Style.font.family
+                    font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
                     color: Color.muted
                   }
@@ -1299,7 +1557,7 @@ Panel {
           textFormat: Text.PlainText
           anchors.horizontalCenter: parent.horizontalCenter
           text: "OmaBlock v1.0 • Updated: " + root.lastUpdated
-          font.family: Style.font.family
+          font.family: root.fontFamily
           font.pixelSize: Style.font.caption - 2
           color: Color.muted
         }

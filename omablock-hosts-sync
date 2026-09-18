@@ -182,33 +182,18 @@ def apply_rules(rules_file: str):
             content = f.read()
 
     ensure_backup()
-    clean_hosts = strip_omablock_block(content)
-
-    # Construct new hosts content
-    block_lines = [
-        "",
-        BEGIN_MARKER,
-        BANNER_COMMENT,
-    ]
-    for d in valid_domains:
-        block_lines.append(f"0.0.0.0 {d}")
-    block_lines.append(END_MARKER)
-    block_lines.append("")
-
-    new_content = clean_hosts + "\n".join(block_lines)
-
-    # Prevent symlink pre-creation attack on TEMP_PATH
-    if os.path.lexists(TEMP_PATH):
-        try:
-            os.unlink(TEMP_PATH)
-        except OSError:
-            pass
-
-    # Atomic write with O_NOFOLLOW
+    # Stream write with O_NOFOLLOW directly to prevent huge memory allocations
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(TEMP_PATH, flags, 0o644)
     with open(fd, "w", encoding="utf-8") as f:
-        f.write(new_content)
+        f.write(clean_hosts)
+        if not clean_hosts.endswith("\n"):
+            f.write("\n")
+        f.write(BEGIN_MARKER + "\n")
+        f.write(BANNER_COMMENT + "\n")
+        for d in valid_domains:
+            f.write(f"0.0.0.0 {d}\n")
+        f.write(END_MARKER + "\n")
     os.chmod(TEMP_PATH, 0o644)
 
     # Atomic swap

@@ -1,5 +1,5 @@
 use std::fs::{self, OpenOptions, Permissions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -69,7 +69,7 @@ pub fn verify_secure_file(path: &Path) -> Result<(), String> {
 
 /// Atomically writes data to a secure file with mode 0600:
 /// 1. Verifies target is not a symlink.
-/// 2. Creates a temporary staging file `.tmp_state_*` in the same directory with mode 0600.
+/// 2. Creates a temporary staging file `.tmp_state_*` in the same directory with mode 0600 and O_NOFOLLOW.
 /// 3. Writes all bytes.
 /// 4. Dispatches sync_all() to guarantee persistence to disk.
 /// 5. Performs atomic rename to destination.
@@ -90,9 +90,9 @@ pub fn atomic_write_secure(path: &Path, data: &[u8]) -> Result<(), String> {
 
     let mut file = OpenOptions::new()
         .write(true)
-        .create(true)
-        .truncate(true)
+        .create_new(true)
         .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
         .open(&tmp_path)
         .map_err(|e| format!("Failed to create temporary state file: {}", e))?;
 
@@ -107,6 +107,10 @@ pub fn atomic_write_secure(path: &Path, data: &[u8]) -> Result<(), String> {
 
     drop(file);
 
+    if path.exists() {
+        verify_secure_file(path)?;
+    }
+
     fs::rename(&tmp_path, path).map_err(|e| {
         let _ = fs::remove_file(&tmp_path);
         format!("Failed to atomically rename temporary file to destination: {}", e)
@@ -115,10 +119,45 @@ pub fn atomic_write_secure(path: &Path, data: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// Reads a secure file ensuring no symlinks, regular file type, and correct ownership
-pub fn read_secure_file(path: &Path) -> Result<String, String> {
+/// Reads a secure file ensuring bounded memory consumption, no symlinks, regular file type, and correct ownership
+pub fn read_secure_file_bounded(path: &Path, max_bytes: usize) -> Result<String, String> {
     verify_secure_file(path)?;
-    fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))
+
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|e| format!("Failed to open file safely with O_NOFOLLOW: {}", e))?;
+
+    let fd_meta = file.metadata().map_err(|e| format!("Failed to read descriptor metadata: {}", e))?;
+    if !fd_meta.is_file() {
+        return Err(format!("Security violation: Descriptor is not a regular file: {:?}", path));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        // SAFETY: getuid() is standard POSIX syscall.
+        let uid = unsafe { libc::getuid() };
+        if fd_meta.uid() != uid {
+            return Err(format!("Security violation: Descriptor UID mismatch on {:?}: {} != {}", path, fd_meta.uid(), uid));
+        }
+    }
+
+    let mut buf = String::with_capacity(fd_meta.len().min(max_bytes as u64) as usize);
+    let mut handle = (&mut file).take((max_bytes.saturating_add(1)) as u64);
+    handle.read_to_string(&mut buf).map_err(|e| format!("Failed to read file contents: {}", e))?;
+
+    if buf.len() > max_bytes {
+        return Err(format!("Security violation: File {:?} exceeds maximum allowed limit of {} bytes", path, max_bytes));
+    }
+
+    Ok(buf)
+}
+
+/// Reads a secure file with default 1 MiB ceiling
+pub fn read_secure_file(path: &Path) -> Result<String, String> {
+    read_secure_file_bounded(path, 1024 * 1024)
 }
 
 #[cfg(test)]
@@ -162,6 +201,29 @@ mod tests {
         assert!(verify_secure_file(&link_file).is_err());
         assert!(read_secure_file(&link_file).is_err());
         assert!(atomic_write_secure(&link_file, b"overwritten").is_err());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_bounded_reads() {
+        let dir = std::env::temp_dir().join("omablock_bounded_read_test");
+        let _ = fs::remove_dir_all(&dir);
+        ensure_state_dir(&dir).expect("ensure_state_dir failed");
+
+        let file_path = dir.join("bounded.txt");
+        let payload = "A".repeat(100);
+        atomic_write_secure(&file_path, payload.as_bytes()).expect("write failed");
+
+        // Reading with enough capacity succeeds
+        let res_ok = read_secure_file_bounded(&file_path, 150);
+        assert!(res_ok.is_ok());
+        assert_eq!(res_ok.unwrap().len(), 100);
+
+        // Reading with lower ceiling fails safely
+        let res_err = read_secure_file_bounded(&file_path, 50);
+        assert!(res_err.is_err());
+        assert!(res_err.unwrap_err().contains("exceeds maximum allowed limit"));
 
         let _ = fs::remove_dir_all(&dir);
     }

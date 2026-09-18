@@ -15,12 +15,241 @@ fn default_true() -> bool {
     true
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum BlockingLevel {
+    Standard,
+    #[default]
+    Aggressive,
+    Ultimate,
+}
+
+impl std::str::FromStr for BlockingLevel {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().trim() {
+            "standard" | "std" | "standart" => Ok(Self::Standard),
+            "aggressive" | "gelismis" | "advanced" => Ok(Self::Aggressive),
+            "ultimate" | "maksimum" | "max" | "popup" | "anti-popup" | "no-popup" => Ok(Self::Ultimate),
+            _ => Err(()),
+        }
+    }
+}
+
+impl BlockingLevel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Standard => "standard",
+            Self::Aggressive => "aggressive",
+            Self::Ultimate => "ultimate",
+        }
+    }
+
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Option<Self> {
+        <Self as std::str::FromStr>::from_str(s).ok()
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Standard => "Standard",
+            Self::Aggressive => "Aggressive",
+            Self::Ultimate => "Ultimate (Anti-Popup)",
+        }
+    }
+}
+
+const BUILTIN_POPUP_RULES: &[&str] = &[
+    "popads.net",
+    "popcash.net",
+    "propellerads.com",
+    "adcash.com",
+    "clickadu.com",
+    "hilltopads.net",
+    "adsterra.com",
+    "exoclick.com",
+    "trafficjunky.com",
+    "juicyads.com",
+    "tsyndicate.com",
+    "twinred.com",
+    "realsrv.com",
+    "wigetmedia.com",
+    "adtrue.com",
+    "adtng.com",
+    "directrev.com",
+    "popunder.net",
+    "ero-advertising.com",
+    "adxpansion.com",
+    "adxprts.com",
+    "plugrush.com",
+    "trafficstars.com",
+    "bidvertiser.com",
+    "yllix.com",
+    "coinzilla.com",
+    "a-ads.com",
+    "clicksor.com",
+    "infolinks.com",
+    "chitika.com",
+    "clickaine.com",
+    "ad-maven.com",
+    "pushwoosh.com",
+    "onesignal.com",
+    "pushalert.co",
+    "notix.co",
+    "izooto.com",
+    "webpushs.com",
+    "truepush.com",
+    "pushassist.com",
+    "richpush.com",
+    "evadav.com",
+    "rollerads.com",
+    "mondiad.com",
+    "clickadilla.com",
+    "daopush.com",
+    "pushground.com",
+    "clickunder.ru",
+    "popunder.ru",
+    "trafficfactory.biz",
+    "adrun.com",
+    "hubtraffic.com",
+    "tubecorporate.com",
+    "exosrv.com",
+    "exdynsrv.com",
+    "rtmark.net",
+    "serving-sys.com",
+    "zedo.com",
+    "adnxs.com",
+    "adpushup.com",
+    "adrecovery.com",
+    "adblade.com",
+    "content.ad",
+    "revcontent.com",
+    "taboola.com",
+    "outbrain.com",
+    "mgid.com",
+    "adkeeper.com",
+    "marketgid.com",
+    "kadam.net",
+    "teasernet.com",
+    "bodyclick.net",
+    "novadnet.com",
+    "adkernel.com",
+    "smartadserver.com",
+    "openx.net",
+    "rubiconproject.com",
+    "pubmatic.com",
+    "casalemedia.com",
+    "exponential.com",
+    "conversantmedia.com",
+    "sovrn.com",
+    "yieldmo.com",
+    "sharethrough.com",
+    "triplelift.com",
+    "gumgum.com",
+    "inmobi.com",
+    "smaato.net",
+    "flurry.com",
+    "chartboost.com",
+    "vungle.com",
+    "applovin.com",
+    "ironsrc.com",
+    "fyber.com",
+    "adcolony.com",
+    "tapjoy.com",
+    "hyprmx.com",
+    "mintegral.com",
+    "pangle.io",
+    "leadbolt.com",
+    "startapp.com",
+    "mobvista.com",
+    "adfalcon.com",
+    "smartfocus.com",
+    "siftscience.com",
+    "hotjar.com",
+    "crazyegg.com",
+    "mouseflow.com",
+    "fullstory.com",
+    "luckyorange.com",
+    "inspectlet.com",
+    "sessioncam.com",
+    "clicktale.net",
+    "clarity.ms",
+    "pushwelcome.com",
+    "pushmaster.info",
+    "propush.me",
+    "pushmonetization.com",
+    "adoperator.com",
+    "targeleon.com",
+    "clickunder.org",
+    "popmyads.com",
+    "popvertising.com",
+    "propeller-tracking.com",
+    "onclickbright.com",
+    "onclickperformance.com",
+    "onclickalgo.com",
+    "onclickpredictiv.com",
+    "onclickmega.com",
+    "onclicksuper.com",
+    "adsterra.net",
+    "adsterratools.com",
+    "atdmt.com",
+    "adform.net",
+    "admob.com",
+    "adition.com",
+    "advertising.com",
+    "yandexadexchange.net",
+    "an.yandex.ru",
+    "offerforge.com",
+    "tradedoubler.com",
+    "zanox.com",
+    "cj.com",
+    "linkshare.com",
+    "shareasale.com",
+    "adtarget.me",
+    "adgear.com",
+    "adtech.de",
+    "yieldlove.com",
+    "adscale.de",
+    "yieldmanager.com",
+    "adtechus.com",
+    "admeta.com",
+    "adshuffle.com",
+    "contextweb.com",
+    "dotomi.com",
+    "specificclick.net",
+    "interclick.com",
+    "mediaplex.com",
+    "valueclick.com",
+    "fastclick.net",
+    "burstnet.com",
+    "tribalfusion.com",
+    "chitika.net",
+    "bidvertiser.net",
+    "adknowledge.com",
+    "revenuehits.com",
+    "infolinks.net",
+    "buysellads.com",
+    "directleads.com",
+    "linkbucks.com",
+    "adf.ly",
+    "shorte.st",
+    "ouo.io",
+    "linkvertise.com",
+    "bc.vc",
+    "tinyium.com",
+    "q.gs",
+    "j.gs",
+];
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CategoriesConfig {
     pub ads: bool,
     pub telemetry: bool,
     pub malware: bool,
     pub social: bool,
+    #[serde(default = "default_true")]
+    pub popups: bool,
 }
 
 impl Default for CategoriesConfig {
@@ -30,6 +259,7 @@ impl Default for CategoriesConfig {
             telemetry: true,
             malware: true,
             social: false,
+            popups: true,
         }
     }
 }
@@ -57,6 +287,8 @@ pub struct TestSummary {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OmaBlockConfig {
     pub enabled: bool,
+    #[serde(default)]
+    pub blocking_level: BlockingLevel,
     pub categories: CategoriesConfig,
     pub whitelist: Vec<String>,
     pub blacklist: Vec<String>,
@@ -74,6 +306,7 @@ impl Default for OmaBlockConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            blocking_level: BlockingLevel::Aggressive,
             categories: CategoriesConfig::default(),
             whitelist: Vec::new(),
             blacklist: Vec::new(),
@@ -89,6 +322,7 @@ impl Default for OmaBlockConfig {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StatusOutput {
     pub enabled: bool,
+    pub blocking_level: String,
     pub active_rules: usize,
     pub total_rules: usize,
     pub categories: CategoriesConfig,
@@ -327,14 +561,22 @@ fn load_all_rules() -> ParsedRules {
     category_counts.insert("telemetry".to_string(), 0);
     category_counts.insert("malware".to_string(), 0);
     category_counts.insert("social".to_string(), 0);
+    category_counts.insert("popups".to_string(), 0);
 
     // 1. Always load curated builtin rules FIRST (ensures telemetry and ad sinks exist)
     parse_rules_content(BUILTIN_RULES, &mut all_rules);
 
-    // 2. Overlay cached upstream rules if available
+    // 2. Load dedicated built-in popup and redirect shield rules
+    for domain in BUILTIN_POPUP_RULES {
+        if let Ok(valid) = validate_domain(domain) {
+            all_rules.insert(valid, "popups".to_string());
+        }
+    }
+
+    // 3. Overlay cached upstream rules if available (bounded to 32 MiB)
     let cached_path = get_cached_rules_path();
     if cached_path.exists() {
-        if let Ok(content) = secure_fs::read_secure_file(&cached_path) {
+        if let Ok(content) = secure_fs::read_secure_file_bounded(&cached_path, 32 * 1024 * 1024) {
             parse_rules_content(&content, &mut all_rules);
         }
     }
@@ -388,12 +630,24 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
     let mut active_domains: HashSet<String> = HashSet::new();
 
     for (domain, cat) in &rules.all_rules {
-        let is_cat_enabled = match cat.as_str() {
-            "ads" => cfg.categories.ads,
-            "telemetry" => cfg.categories.telemetry,
-            "malware" => cfg.categories.malware,
-            "social" => cfg.categories.social,
-            _ => true,
+        let is_cat_enabled = match cfg.blocking_level {
+            BlockingLevel::Standard => match cat.as_str() {
+                "ads" => cfg.categories.ads,
+                "malware" => cfg.categories.malware,
+                _ => false,
+            },
+            BlockingLevel::Aggressive => match cat.as_str() {
+                "ads" => cfg.categories.ads,
+                "telemetry" => cfg.categories.telemetry,
+                "malware" => cfg.categories.malware,
+                "social" => cfg.categories.social,
+                "popups" => cfg.categories.popups,
+                _ => true,
+            },
+            BlockingLevel::Ultimate => {
+                // In Ultimate level, all categories and aggressive pop-ups are strictly enforced
+                true
+            }
         };
 
         if is_cat_enabled {
@@ -418,7 +672,7 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
     }
 
     // DoH Bypass Prevention: Signal browsers (e.g. Firefox) to gracefully fall back to system sinkhole rules
-    if cfg.doh_prevention {
+    if cfg.doh_prevention || cfg.blocking_level == BlockingLevel::Ultimate {
         let doh_domains = [
             "use-application-dns.net", // Official Mozilla Canary domain: triggers automatic graceful fallback to system DNS
         ];
@@ -567,16 +821,20 @@ fn update_blocklists_online(cfg: &mut OmaBlockConfig, rules: &mut ParsedRules) -
     let cached_path = get_cached_rules_path();
     let temp_download = get_state_dir().join("download_hosts.tmp");
 
-    let urls = vec![
-        "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
-        "https://v.firebog.net/hosts/Easyprivacy.txt",
-        "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/pro.txt",
-        "https://v.firebog.net/hosts/AdguardDNS.txt",
+    let urls: Vec<(&str, &str)> = vec![
+        ("https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/popupads-onlydomains.txt", "popups"),
+        ("https://v.firebog.net/hosts/Admiral.txt", "popups"),
+        ("https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Spam/hosts", "popups"),
+        ("https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Risk/hosts", "malware"),
+        ("https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt", "ads"),
+        ("https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts", "ads"),
+        ("https://v.firebog.net/hosts/Easyprivacy.txt", "telemetry"),
+        ("https://v.firebog.net/hosts/AdguardDNS.txt", "ads"),
     ];
 
     let mut new_domains = HashMap::new();
 
-    for url in urls {
+    for (url, default_cat) in urls {
         // Ensure no pre-existing file or symlink exists before curl writes to it
         let _ = fs::remove_file(&temp_download);
 
@@ -585,10 +843,10 @@ fn update_blocklists_online(cfg: &mut OmaBlockConfig, rules: &mut ParsedRules) -
             None => continue,
         };
 
-        let deadline = Instant::now() + Duration::from_secs(18);
+        let deadline = Instant::now() + Duration::from_secs(20);
         let status = subproc::run_cmd_bounded(
             "curl",
-            &["-sSL", "--max-time", "15", url, "-o", temp_str],
+            &["-sSL", "--max-time", "18", url, "-o", temp_str],
             &[],
             deadline,
             4096,
@@ -599,14 +857,14 @@ fn update_blocklists_online(cfg: &mut OmaBlockConfig, rules: &mut ParsedRules) -
                 let reader = BufReader::new(f);
                 for line in reader.lines().map_while(Result::ok) {
                     let line = line.trim();
-                    if line.is_empty() || line.starts_with('#') {
+                    if line.is_empty() || line.starts_with('#') || line.starts_with('!') || line.starts_with('/') {
                         continue;
                     }
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     let (domain, cat) = if parts.len() >= 2 && (parts[0] == "0.0.0.0" || parts[0] == "127.0.0.1") {
-                        (parts[1].to_lowercase(), "ads")
+                        (parts[1].to_lowercase(), default_cat)
                     } else if parts.len() == 1 {
-                        (parts[0].to_lowercase(), "telemetry")
+                        (parts[0].to_lowercase(), default_cat)
                     } else {
                         continue;
                     };
@@ -676,6 +934,7 @@ fn main() {
 
         let output = StatusOutput {
             enabled: cfg.enabled,
+            blocking_level: cfg.blocking_level.as_str().to_string(),
             active_rules: active_count,
             total_rules: rules.all_rules.len(),
             categories: cfg.categories.clone(),
@@ -743,6 +1002,7 @@ fn main() {
                     "telemetry" => cfg.categories.telemetry = !cfg.categories.telemetry,
                     "malware" => cfg.categories.malware = !cfg.categories.malware,
                     "social" => cfg.categories.social = !cfg.categories.social,
+                    "popups" | "popup" => cfg.categories.popups = !cfg.categories.popups,
                     _ => eprintln!("Unknown category: {}", cat),
                 }
                 save_config(&cfg);
@@ -899,8 +1159,57 @@ fn main() {
             }
             println!("Browser DoH bypass prevention set to: {}", cfg.doh_prevention);
         }
+        "--set-level" => {
+            if args.len() > 2 {
+                if let Some(level) = BlockingLevel::from_str(&args[2]) {
+                    cfg.blocking_level = level;
+                    match level {
+                        BlockingLevel::Standard => {
+                            cfg.categories.ads = true;
+                            cfg.categories.malware = true;
+                            cfg.categories.telemetry = false;
+                            cfg.categories.social = false;
+                            cfg.categories.popups = false;
+                        }
+                        BlockingLevel::Aggressive => {
+                            cfg.categories.ads = true;
+                            cfg.categories.malware = true;
+                            cfg.categories.telemetry = true;
+                            cfg.categories.social = false;
+                            cfg.categories.popups = true;
+                        }
+                        BlockingLevel::Ultimate => {
+                            cfg.categories.ads = true;
+                            cfg.categories.malware = true;
+                            cfg.categories.telemetry = true;
+                            cfg.categories.social = true;
+                            cfg.categories.popups = true;
+                            cfg.doh_prevention = true;
+                        }
+                    }
+                    save_config(&cfg);
+                    let count = if cfg.enabled {
+                        sync_system_hosts(&cfg, &rules)
+                    } else {
+                        0
+                    };
+                    send_notification(
+                        "OmaBlock Shield Level Updated",
+                        &format!("Shield level set to {} ({} rules active)", level.display_name(), count),
+                    );
+                    println!("Blocking level set to: {} ({} active rules)", level.as_str(), count);
+                } else {
+                    eprintln!("Invalid level: '{}'. Choose from: standard, aggressive, ultimate", args[2]);
+                }
+            } else {
+                eprintln!("Usage: omablock-engine --set-level <standard|aggressive|ultimate>");
+            }
+        }
+        "--level" => {
+            println!("{}", cfg.blocking_level.as_str());
+        }
         _ => {
-            eprintln!("Usage: omablock-engine [--status|--enable|--disable|--toggle|--toggle-category <cat>|--whitelist-add <d>|--whitelist-remove <d>|--blacklist-add <d>|--blacklist-remove <d>|--toggle-auto-update|--set-auto-update <bool>|--pause <mins>|--resume|--toggle-doh-guard|--startup|--test|--update|--flush]");
+            eprintln!("Usage: omablock-engine [--status|--enable|--disable|--toggle|--set-level <standard|aggressive|ultimate>|--level|--toggle-category <cat>|--whitelist-add <d>|--whitelist-remove <d>|--blacklist-add <d>|--blacklist-remove <d>|--toggle-auto-update|--set-auto-update <bool>|--pause <mins>|--resume|--toggle-doh-guard|--startup|--test|--update|--flush]");
         }
     }
 }
@@ -1048,5 +1357,40 @@ mod tests {
 
         let active = "127.0.0.1 localhost\n# --- BEGIN OMABLOCK MANAGED RULES ---\n0.0.0.0 ad.com\n# --- END OMABLOCK MANAGED RULES ---\n";
         assert!(is_system_hosts_active_from_reader(active.as_bytes()));
+    }
+
+    #[test]
+    fn test_blocking_level_parsing_and_defaults() {
+        assert_eq!(BlockingLevel::default(), BlockingLevel::Aggressive);
+        assert_eq!(BlockingLevel::from_str("standard"), Some(BlockingLevel::Standard));
+        assert_eq!(BlockingLevel::from_str("standart"), Some(BlockingLevel::Standard));
+        assert_eq!(BlockingLevel::from_str("aggressive"), Some(BlockingLevel::Aggressive));
+        assert_eq!(BlockingLevel::from_str("gelismis"), Some(BlockingLevel::Aggressive));
+        assert_eq!(BlockingLevel::from_str("ultimate"), Some(BlockingLevel::Ultimate));
+        assert_eq!(BlockingLevel::from_str("maksimum"), Some(BlockingLevel::Ultimate));
+        assert_eq!(BlockingLevel::from_str("anti-popup"), Some(BlockingLevel::Ultimate));
+        assert_eq!(BlockingLevel::from_str("popup"), Some(BlockingLevel::Ultimate));
+        assert_eq!(BlockingLevel::from_str("invalid_xyz"), None);
+
+        let cfg = OmaBlockConfig::default();
+        assert_eq!(cfg.blocking_level, BlockingLevel::Aggressive);
+        assert!(cfg.categories.popups);
+
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("\"blocking_level\":\"aggressive\""));
+        let loaded: OmaBlockConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.blocking_level, BlockingLevel::Aggressive);
+    }
+
+    #[test]
+    fn test_builtin_popup_rules_validation() {
+        assert!(!BUILTIN_POPUP_RULES.is_empty());
+        for domain in BUILTIN_POPUP_RULES {
+            assert!(
+                validate_domain(domain).is_ok(),
+                "Built-in popup domain failed validation: {}",
+                domain
+            );
+        }
     }
 }
