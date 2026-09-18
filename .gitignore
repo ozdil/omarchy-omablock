@@ -2,3 +2,4 @@ target/
 *.tmp
 *.log
 omablock-engine
+__pycache__/

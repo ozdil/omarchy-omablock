@@ -240,6 +240,20 @@ const BUILTIN_POPUP_RULES: &[&str] = &[
     "tinyium.com",
     "q.gs",
     "j.gs",
+    "yenimedya.com.tr",
+    "www.yenimedya.com.tr",
+    "adsby.io",
+    "cdn.adsby.io",
+    "membrana.media",
+    "cdn.membrana.media",
+    "idealmedia.io",
+    "jsc.idealmedia.io",
+    "gemius.pl",
+    "hit.gemius.pl",
+    "virgul.com",
+    "ad.virgul.com",
+    "medyanet.net",
+    "ad.medyanet.net",
 ];
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -671,10 +685,28 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
         active_domains.insert(bl.to_lowercase());
     }
 
-    // DoH Bypass Prevention: Signal browsers (e.g. Firefox) to gracefully fall back to system sinkhole rules
+    // DoH Bypass Prevention: Block encrypted DNS endpoints and canary domains to ensure browsers honor system sinkhole rules
     if cfg.doh_prevention || cfg.blocking_level == BlockingLevel::Ultimate {
         let doh_domains = [
-            "use-application-dns.net", // Official Mozilla Canary domain: triggers automatic graceful fallback to system DNS
+            "use-application-dns.net", // Firefox Canary
+            "dns.google",
+            "dns.google.com",
+            "cloudflare-dns.com",
+            "chrome.cloudflare-dns.com",
+            "mozilla.cloudflare-dns.com",
+            "1dot1dot1dot1.cloudflare-dns.com",
+            "dns.quad9.net",
+            "doh.opendns.com",
+            "dns.adguard-dns.com",
+            "doh.cleanbrowsing.org",
+            "dns.nextdns.io",
+            "doh.applied-privacy.net",
+            "dnsforge.de",
+            "doh.mullvad.net",
+            "doh.controld.com",
+            "dns.alidns.com",
+            "doh.pub",
+            "dns.sb",
         ];
         for d in &doh_domains {
             active_domains.insert(d.to_string());
