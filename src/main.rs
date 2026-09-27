@@ -1,5 +1,10 @@
+mod ai;
+mod kernel;
 mod secure_fs;
 mod subproc;
+
+pub use ai::{AiClassification, AiRiskAssessment, DgaClassifier};
+pub use kernel::{KernelFilterStatus, KernelNetfilter};
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -314,6 +319,10 @@ pub struct OmaBlockConfig {
     pub paused_until: Option<u64>,
     #[serde(default = "default_true")]
     pub doh_prevention: bool,
+    #[serde(default = "default_true")]
+    pub ai_protection: bool,
+    #[serde(default)]
+    pub kernel_enforcement: bool,
 }
 
 impl Default for OmaBlockConfig {
@@ -329,6 +338,8 @@ impl Default for OmaBlockConfig {
             auto_update: false,
             paused_until: None,
             doh_prevention: false,
+            ai_protection: true,
+            kernel_enforcement: false,
         }
     }
 }
@@ -350,6 +361,9 @@ pub struct StatusOutput {
     pub paused_until: Option<u64>,
     pub pause_remaining_secs: Option<u64>,
     pub doh_prevention: bool,
+    pub ai_protection: bool,
+    pub kernel_enforcement: bool,
+    pub kernel_status: KernelFilterStatus,
 }
 
 /// Validates that a string is a legitimate RFC 1035 domain name without shell/hosts injection
@@ -980,6 +994,9 @@ fn main() {
             paused_until: cfg.paused_until,
             pause_remaining_secs: pause_remaining,
             doh_prevention: cfg.doh_prevention,
+            ai_protection: cfg.ai_protection,
+            kernel_enforcement: cfg.kernel_enforcement,
+            kernel_status: kernel::KernelNetfilter::query_status(),
         };
 
         if let Ok(json) = serde_json::to_string_pretty(&output) {
@@ -1240,8 +1257,60 @@ fn main() {
         "--level" => {
             println!("{}", cfg.blocking_level.as_str());
         }
+        "--toggle-ai" | "toggle-ai" => {
+            cfg.ai_protection = !cfg.ai_protection;
+            save_config(&cfg);
+            println!("AI DGA and Phishing protection set to: {}", cfg.ai_protection);
+        }
+        "--toggle-kernel" | "toggle-kernel" => {
+            cfg.kernel_enforcement = !cfg.kernel_enforcement;
+            save_config(&cfg);
+            println!("Kernel Netfilter enforcement set to: {}", cfg.kernel_enforcement);
+        }
+        "--ai-inspect" | "ai-inspect" => {
+            if args.len() > 2 {
+                let classifier = DgaClassifier::new();
+                let assessment = classifier.assess(&args[2]);
+                if let Ok(json) = serde_json::to_string_pretty(&assessment) {
+                    println!("{}", json);
+                }
+            } else {
+                eprintln!("Usage: omablock-engine ai-inspect <domain>");
+            }
+        }
+        "--ai-scan" | "ai-scan" => {
+            let classifier = DgaClassifier::new();
+            let mut suspicious_list = Vec::new();
+            for domain in rules.all_rules.keys() {
+                let assessment = classifier.assess(domain);
+                if assessment.is_suspicious {
+                    suspicious_list.push(assessment);
+                    if suspicious_list.len() >= 20 {
+                        break;
+                    }
+                }
+            }
+            if let Ok(json) = serde_json::to_string_pretty(&suspicious_list) {
+                println!("{}", json);
+            }
+        }
+        "--kernel-status" | "kernel-status" => {
+            let st = KernelNetfilter::query_status();
+            if let Ok(json) = serde_json::to_string_pretty(&st) {
+                println!("{}", json);
+            }
+        }
+        "--kernel-ruleset" | "kernel-ruleset" => {
+            let sample_ips: Vec<std::net::IpAddr> = vec![
+                "8.8.8.8".parse().unwrap(),
+                "1.1.1.1".parse().unwrap(),
+                "9.9.9.9".parse().unwrap(),
+            ];
+            let ruleset = KernelNetfilter::generate_ruleset(&sample_ips);
+            println!("{}", ruleset);
+        }
         _ => {
-            eprintln!("Usage: omablock-engine [--status|--enable|--disable|--toggle|--set-level <standard|aggressive|ultimate>|--level|--toggle-category <cat>|--whitelist-add <d>|--whitelist-remove <d>|--blacklist-add <d>|--blacklist-remove <d>|--toggle-auto-update|--set-auto-update <bool>|--pause <mins>|--resume|--toggle-doh-guard|--startup|--test|--update|--flush]");
+            eprintln!("Usage: omablock-engine [--status|--enable|--disable|--toggle|--set-level <standard|aggressive|ultimate>|--level|--toggle-category <cat>|--whitelist-add <d>|--whitelist-remove <d>|--blacklist-add <d>|--blacklist-remove <d>|--toggle-ai|--toggle-kernel|ai-inspect <domain>|ai-scan|kernel-status|kernel-ruleset|--toggle-auto-update|--set-auto-update <bool>|--pause <mins>|--resume|--toggle-doh-guard|--startup|--test|--update|--flush]");
         }
     }
 }

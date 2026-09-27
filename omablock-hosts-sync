@@ -245,6 +245,14 @@ def apply_rules(rules_file: str):
 
     ensure_backup()
     clean_hosts = strip_omablock_block(content)
+
+    # Prevent symlink pre-creation attack on TEMP_PATH
+    if os.path.lexists(TEMP_PATH):
+        try:
+            os.unlink(TEMP_PATH)
+        except OSError:
+            pass
+
     # Stream write with O_NOFOLLOW directly to prevent huge memory allocations
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(TEMP_PATH, flags, 0o644)
@@ -268,8 +276,61 @@ def apply_rules(rules_file: str):
     print(f"Applied {len(valid_domains)} OmaBlock rules to {HOSTS_PATH}.")
 
 
+def apply_nftables_rules():
+    """Applies kernel-level Netfilter rules for OmaBlock if nftables is available."""
+    nft_bin = shutil.which("nft")
+    if not nft_bin:
+        return
+
+    # Generate DoH/DoT drop table
+    nft_script = """
+table inet omablock {
+    set bad_ipv4 {
+        type ipv4_addr;
+        flags interval;
+        elements = { 1.1.1.1, 1.0.0.1, 8.8.8.8, 8.8.4.4, 9.9.9.9, 149.112.112.112 }
+    }
+    set bad_ipv6 {
+        type ipv6_addr;
+        flags interval;
+        elements = { 2606:4700:4700::1111, 2606:4700:4700::1001, 2001:4860:4860::8888, 2001:4860:4860::8844, 2620:fe::fe }
+    }
+    chain output {
+        type filter hook output priority filter; policy accept;
+        # Restrict drops to encrypted DNS ports (443 DoH, 853 DoT, 53 plaintext) with fast TCP RST
+        ip daddr @bad_ipv4 tcp dport { 443, 853 } counter reject with tcp reset
+        ip daddr @bad_ipv4 udp dport { 53, 853 } counter reject with icmp type admin-prohibited
+        ip6 daddr @bad_ipv6 tcp dport { 443, 853 } counter reject with tcp reset
+        ip6 daddr @bad_ipv6 udp dport { 53, 853 } counter reject with icmpx type admin-prohibited
+    }
+}
+"""
+    tmp_nft = "/etc/hosts.omablock.nft.tmp"
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(tmp_nft, flags, 0o600)
+        with open(fd, "w", encoding="utf-8") as f:
+            f.write(nft_script)
+        subprocess.run([nft_bin, "-f", tmp_nft], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    finally:
+        if os.path.lexists(tmp_nft):
+            try:
+                os.unlink(tmp_nft)
+            except OSError:
+                pass
+
+
+def clear_nftables_rules():
+    """Flushes OmaBlock kernel Netfilter table if present."""
+    nft_bin = shutil.which("nft")
+    if not nft_bin:
+        return
+    subprocess.run([nft_bin, "delete", "table", "inet", "omablock"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def clear_rules():
-    """Removes OmaBlock rules from /etc/hosts."""
+    """Removes OmaBlock rules from /etc/hosts and kernel Netfilter table."""
+    clear_nftables_rules()
     if not os.path.exists(HOSTS_PATH):
         return
 
@@ -304,7 +365,7 @@ def clear_rules():
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: omablock-hosts-sync [--apply <rules_file> | --clear | --status]")
+        print("Usage: omablock-hosts-sync [--apply <rules_file> [--with-kernel] | --clear | --status]")
         sys.exit(1)
 
     cmd = sys.argv[1]
@@ -323,6 +384,8 @@ def main():
             print("Error: --apply requires root privileges.", file=sys.stderr)
             sys.exit(1)
         apply_rules(sys.argv[2])
+        if "--with-kernel" in sys.argv:
+            apply_nftables_rules()
     else:
         print(f"Unknown command: {cmd}", file=sys.stderr)
         sys.exit(1)

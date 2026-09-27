@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=OmaBlock
+GenericName=DNS Privacy Shield
+Comment=Zero-Trust Host, Adblocker & DNS Privacy Firewall for Omarchy Linux
+Exec=omablock-dashboard
+Icon=security-high
+Terminal=false
+Categories=System;Security;Network;
+Keywords=adblock;hosts;dns;privacy;firewall;omarchy;

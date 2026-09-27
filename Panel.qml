@@ -39,6 +39,10 @@ Panel {
   property string lastUpdated: "Built-in Curated v1.0"
   property int pauseRemainingSecs: 0
   property bool dohPrevention: false
+  property bool aiProtection: true
+  property bool kernelEnforcement: false
+  property bool kernelActive: false
+  property int kernelRuleCount: 0
 
   property bool isTesting: false
   property bool isUpdating: false
@@ -91,6 +95,16 @@ Panel {
 
   function toggleDohGuard() {
     actionProc.command = [root.resolveEnginePath(), "--toggle-doh-guard"]
+    actionProc.running = true
+  }
+
+  function toggleAi() {
+    actionProc.command = [root.resolveEnginePath(), "--toggle-ai"]
+    actionProc.running = true
+  }
+
+  function toggleKernel() {
+    actionProc.command = [root.resolveEnginePath(), "--toggle-kernel"]
     actionProc.running = true
   }
 
@@ -208,6 +222,12 @@ Panel {
           root.lastUpdated = d.last_updated || "Built-in Curated v1.0"
           root.pauseRemainingSecs = d.pause_remaining_secs || 0
           root.dohPrevention = !!d.doh_prevention
+          root.aiProtection = !!d.ai_protection
+          root.kernelEnforcement = !!d.kernel_enforcement
+          if (d.kernel_status) {
+            root.kernelActive = !!d.kernel_status.active
+            root.kernelRuleCount = d.kernel_status.rule_count || 0
+          }
 
           if (d.last_test) {
             root.testSuccess = !!d.last_test.success
@@ -224,6 +244,11 @@ Panel {
     onExited: {
       root.refresh()
     }
+  }
+
+  Process {
+    id: openWindowProc
+    command: ["omablock-dashboard"]
   }
 
   Process {
@@ -400,13 +425,30 @@ Panel {
             }
           }
 
-          ToggleSwitch {
-            id: masterToggle
+          Row {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            checked: root.isEnabled
-            accent: Color.accent
-            onToggled: root.toggleMaster()
+            spacing: Style.space(8)
+
+            Button {
+              text: "Window"
+              iconText: "\uf2d0"
+              tooltipText: "Open Standalone Privacy Shield Window"
+              fontFamily: root.fontFamily
+              fontSize: Style.font.caption
+              bordered: true
+              onClicked: {
+                root.close()
+                openWindowProc.running = true
+              }
+            }
+
+            ToggleSwitch {
+              id: masterToggle
+              checked: root.isEnabled
+              accent: Color.accent
+              onToggled: root.toggleMaster()
+            }
           }
         }
 
@@ -1363,6 +1405,146 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: root.dohPrevention ? "Mozilla canary domain signals browsers to obey system hosts" : "Browsers may bypass sinkhole via encrypted DoH"
+              color: Color.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption - 1
+              elide: Text.ElideRight
+              width: parent.width
+            }
+          }
+        }
+
+        // AI Shield Card
+        BorderSurface {
+          width: parent.width
+          implicitHeight: Style.space(52)
+          radius: Style.cornerRadius
+          color: Style.controlFill(false, mouseAi.containsMouse, Color.foreground, Color.accent)
+          borderSpec: Border.controlSpec(mouseAi.containsMouse ? "hover-cursor" : "normal", Color.foreground, Color.accent)
+
+          MouseArea {
+            id: mouseAi
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: root.toggleAi()
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            id: iconAi
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(12)
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.space(22)
+            horizontalAlignment: Text.AlignHCenter
+            text: "󰚩"
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.icon
+            color: root.aiProtection ? Color.accent : Color.muted
+          }
+
+          ToggleSwitch {
+            id: toggleAi
+            anchors.right: parent.right
+            anchors.rightMargin: Style.space(12)
+            anchors.verticalCenter: parent.verticalCenter
+            checked: root.aiProtection
+            accent: Color.accent
+            onToggled: root.toggleAi()
+          }
+
+          Column {
+            anchors.left: iconAi.right
+            anchors.leftMargin: Style.space(10)
+            anchors.right: toggleAi.left
+            anchors.rightMargin: Style.space(10)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(1)
+
+            Text {
+              textFormat: Text.PlainText
+              text: "Local AI Heuristic Shield"
+              color: Color.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              font.bold: true
+              elide: Text.ElideRight
+              width: parent.width
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              text: root.aiProtection ? "Shannon entropy & typo-squatting local inference" : "AI heuristic threat classification is disabled"
+              color: Color.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption - 1
+              elide: Text.ElideRight
+              width: parent.width
+            }
+          }
+        }
+
+        // Kernel Netfilter Card
+        BorderSurface {
+          width: parent.width
+          implicitHeight: Style.space(52)
+          radius: Style.cornerRadius
+          color: Style.controlFill(false, mouseKernel.containsMouse, Color.foreground, Color.accent)
+          borderSpec: Border.controlSpec(mouseKernel.containsMouse ? "hover-cursor" : "normal", Color.foreground, Color.accent)
+
+          MouseArea {
+            id: mouseKernel
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: root.toggleKernel()
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            id: iconKernel
+            anchors.left: parent.left
+            anchors.leftMargin: Style.space(12)
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.space(22)
+            horizontalAlignment: Text.AlignHCenter
+            text: "󰟀"
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.icon
+            color: (root.kernelEnforcement && root.kernelActive) ? Color.accent : (root.kernelEnforcement ? "#f59e0b" : Color.muted)
+          }
+
+          ToggleSwitch {
+            id: toggleKernel
+            anchors.right: parent.right
+            anchors.rightMargin: Style.space(12)
+            anchors.verticalCenter: parent.verticalCenter
+            checked: root.kernelEnforcement
+            accent: Color.accent
+            onToggled: root.toggleKernel()
+          }
+
+          Column {
+            anchors.left: iconKernel.right
+            anchors.leftMargin: Style.space(10)
+            anchors.right: toggleKernel.left
+            anchors.rightMargin: Style.space(10)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(1)
+
+            Text {
+              textFormat: Text.PlainText
+              text: "Kernel Netfilter Enforcement"
+              color: Color.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              font.bold: true
+              elide: Text.ElideRight
+              width: parent.width
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              text: root.kernelEnforcement ? (root.kernelActive ? ("Active nftables chain (" + root.kernelRuleCount + " rules loaded)") : "Kernel nftables enabled (waiting for hosts sync)") : "Kernel-level L3/L4 packet dropping disabled"
               color: Color.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption - 1
