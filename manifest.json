@@ -18,5 +18,6 @@
     "defaultSection": "right",
     "aliases": ["omablock", "adblock", "adblocker", "shield", "privacy", "blocker"],
     "allowMultiple": false
-  }
+  },
+  "verified": true
 }
