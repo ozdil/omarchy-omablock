@@ -13,19 +13,35 @@ Item {
     property int totalRules: 0
     property string blockingLevel: "aggressive"
     property bool systemHostsActive: false
+
+    property bool catAds: true
+    property bool catTelemetry: true
+    property bool catMalware: true
+    property bool catPopups: true
+    property bool catSocial: false
+
     property int countAds: 0
     property int countTelemetry: 0
     property int countMalware: 0
     property int countPopups: 0
     property int countSocial: 0
+
     property var whitelist: []
     property var blacklist: []
+    property string activeListTab: "whitelist"
+
     property bool dohPrevention: false
     property bool aiProtection: true
     property bool kernelActive: false
     property int pauseRemainingSecs: 0
     property string testResultMsg: ""
     property bool isTesting: false
+    property bool isUpdating: false
+
+    property bool networkBlackoutActive: false
+    property bool usbArmorEnabled: false
+    property string selfIntegrityHash: ""
+    property bool idnHomographDetected: false
 
     readonly property string enginePath: {
         var base = Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "");
@@ -43,6 +59,25 @@ Item {
         if (!statusProc.running) {
             statusProc.running = true;
         }
+    }
+
+    function toggleBlackout() {
+        if (root.networkBlackoutActive) {
+            actionProc.command = [root.enginePath, "--resume-network"];
+        } else {
+            actionProc.command = [root.enginePath, "--panic-blackout"];
+        }
+        actionProc.running = true;
+    }
+
+    function toggleUsbArmor() {
+        actionProc.command = [root.enginePath, "--toggle-usb-armor"];
+        actionProc.running = true;
+    }
+
+    function toggleShield() {
+        actionProc.command = [root.enginePath, "--toggle"];
+        actionProc.running = true;
     }
 
     function setLevel(lvl) {
@@ -71,6 +106,21 @@ Item {
         actionProc.running = true;
     }
 
+    function toggleAi() {
+        actionProc.command = [root.enginePath, "--toggle-ai"];
+        actionProc.running = true;
+    }
+
+    function toggleKernel() {
+        actionProc.command = [root.enginePath, "--toggle-kernel"];
+        actionProc.running = true;
+    }
+
+    function toggleCategory(cat) {
+        actionProc.command = [root.enginePath, "--toggle-category", cat];
+        actionProc.running = true;
+    }
+
     function addWhitelist(domain) {
         if (!domain || domain.trim().length === 0) return;
         actionProc.command = [root.enginePath, "--whitelist-add", domain.trim()];
@@ -81,6 +131,29 @@ Item {
         if (!domain) return;
         actionProc.command = [root.enginePath, "--whitelist-remove", domain.trim()];
         actionProc.running = true;
+    }
+
+    function addBlacklist(domain) {
+        if (!domain || domain.trim().length === 0) return;
+        actionProc.command = [root.enginePath, "--blacklist-add", domain.trim()];
+        actionProc.running = true;
+    }
+
+    function removeBlacklist(domain) {
+        if (!domain) return;
+        actionProc.command = [root.enginePath, "--blacklist-remove", domain.trim()];
+        actionProc.running = true;
+    }
+
+    function flushDns() {
+        actionProc.command = [root.enginePath, "--flush"];
+        actionProc.running = true;
+    }
+
+    function updateBlocklists() {
+        if (root.isUpdating) return;
+        root.isUpdating = true;
+        updateProc.running = true;
     }
 
     Process {
@@ -102,6 +175,18 @@ Item {
                     root.kernelActive = !!(d.kernel_status && d.kernel_status.is_active);
                     root.whitelist = d.whitelist || [];
                     root.blacklist = d.blacklist || [];
+                    root.networkBlackoutActive = !!d.network_blackout_active;
+                    root.usbArmorEnabled = !!d.usb_armor_enabled;
+                    root.selfIntegrityHash = d.self_integrity_hash || "";
+                    root.idnHomographDetected = !!d.idn_homograph_detected;
+
+                    if (d.categories) {
+                        root.catAds = !!d.categories.ads;
+                        root.catTelemetry = !!d.categories.telemetry;
+                        root.catMalware = !!d.categories.malware;
+                        root.catPopups = !!d.categories.popups;
+                        root.catSocial = !!d.categories.social;
+                    }
 
                     if (d.category_counts) {
                         root.countAds = Number(d.category_counts.ads) || 0;
@@ -120,6 +205,15 @@ Item {
     Process {
         id: actionProc
         onExited: root.refresh()
+    }
+
+    Process {
+        id: updateProc
+        command: [root.enginePath, "--update"]
+        onExited: {
+            root.isUpdating = false;
+            root.refresh();
+        }
     }
 
     Process {
@@ -176,7 +270,7 @@ Item {
                         color: Theme.textMain
                     }
                     Text {
-                        text: "Zero-Trust Host & DNS Firewall • " + root.activeRules.toLocaleString() + " Active Rules"
+                        text: "Zero-Trust Host & DNS Firewall - " + root.activeRules.toLocaleString() + " Active Rules"
                         font.family: Theme.fontFamily
                         font.pixelSize: 11
                         color: Theme.textMuted
@@ -216,10 +310,47 @@ Item {
                     }
                 }
 
+                // Master Toggle Button
+                Rectangle {
+                    height: 34
+                    implicitWidth: masterBtnRow.implicitWidth + 20
+                    radius: Theme.radiusSm
+                    color: masterMouseArea.containsMouse ? Theme.bgCardHover : Theme.bgCard
+                    border.color: root.isEnabled ? Theme.accentSuccess : Theme.accentWarning
+                    border.width: 1
+
+                    RowLayout {
+                        id: masterBtnRow
+                        anchors.centerIn: parent
+                        spacing: 6
+
+                        Text {
+                            text: root.isEnabled ? Theme.iconCheck : Theme.iconTimes
+                            font.family: Theme.iconFont
+                            font.pixelSize: 11
+                            color: root.isEnabled ? Theme.accentSuccess : Theme.accentWarning
+                        }
+                        Text {
+                            text: root.isEnabled ? "Shield: ON" : "Shield: OFF"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 11
+                            font.bold: true
+                            color: Theme.textMain
+                        }
+                    }
+
+                    MouseArea {
+                        id: masterMouseArea
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleShield()
+                    }
+                }
+
                 // Pause / Resume Toggle
                 Rectangle {
                     height: 34
-                    implicitWidth: pauseBtnRow.implicitWidth + 24
+                    implicitWidth: pauseBtnRow.implicitWidth + 20
                     radius: Theme.radiusSm
                     color: pauseMouseArea.containsMouse ? Theme.bgCardHover : Theme.bgCard
                     border.color: Theme.border
@@ -233,7 +364,7 @@ Item {
                         Text {
                             text: root.isEnabled ? Theme.iconPause : Theme.iconPlay
                             font.family: Theme.iconFont
-                            font.pixelSize: 12
+                            font.pixelSize: 11
                             color: Theme.textMain
                         }
                         Text {
@@ -287,7 +418,150 @@ Item {
             }
         }
 
-        // Main Body: Sevel selector, Advanced Guards and Categories
+        // Military-Grade Controls
+        Rectangle {
+            Layout.fillWidth: true
+            height: 52
+            radius: Theme.radiusMd
+            color: Theme.bgSurface
+            border.color: Theme.border
+            border.width: 1
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
+                spacing: 12
+
+                // Self-Integrity Badge
+                Rectangle {
+                    height: 30
+                    implicitWidth: integrityRow.implicitWidth + 20
+                    radius: Theme.radiusSm
+                    color: Theme.bgCard
+                    border.color: Theme.border
+                    border.width: 1
+                    RowLayout {
+                        id: integrityRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        Text {
+                            text: "\uf023"
+                            font.family: Theme.iconFont
+                            font.pixelSize: 11
+                            color: Theme.accentSuccess
+                        }
+                        Text {
+                            text: "INTEGRITY: " + (root.selfIntegrityHash ? root.selfIntegrityHash.substring(0, 10) + "..." : "VERIFIED")
+                            font.family: Theme.monoFont
+                            font.pixelSize: 10
+                            color: Theme.textMain
+                        }
+                    }
+                }
+
+                // Homograph Radar
+                Rectangle {
+                    height: 30
+                    implicitWidth: homographRow.implicitWidth + 20
+                    radius: Theme.radiusSm
+                    color: Theme.bgCard
+                    border.color: root.idnHomographDetected ? Theme.accentDanger : Theme.border
+                    border.width: 1
+                    RowLayout {
+                        id: homographRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        Text {
+                            text: "\uf3eb"
+                            font.family: Theme.iconFont
+                            font.pixelSize: 11
+                            color: root.idnHomographDetected ? Theme.accentDanger : Theme.textMuted
+                        }
+                        Text {
+                            text: root.idnHomographDetected ? "PUNYCODE ALERT" : "IDN RADAR CLEAR"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 10
+                            color: root.idnHomographDetected ? Theme.accentDanger : Theme.textMain
+                        }
+                    }
+                }
+                
+                Item { Layout.fillWidth: true }
+
+                // Panic Blackout Button
+                Rectangle {
+                    height: 30
+                    implicitWidth: blackoutRow.implicitWidth + 20
+                    radius: Theme.radiusSm
+                    color: blackoutMouseArea.containsMouse ? (root.networkBlackoutActive ? Theme.accentWarning : Theme.accentDanger) : Theme.bgCard
+                    border.color: root.networkBlackoutActive ? Theme.accentWarning : Theme.accentDanger
+                    border.width: 1
+                    RowLayout {
+                        id: blackoutRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        Text {
+                            text: "\uf071" // Warning icon
+                            font.family: Theme.iconFont
+                            font.pixelSize: 11
+                            color: blackoutMouseArea.containsMouse ? Theme.bgSurface : (root.networkBlackoutActive ? Theme.accentWarning : Theme.accentDanger)
+                        }
+                        Text {
+                            text: root.networkBlackoutActive ? "RESUME NETWORK" : "PANIC BLACKOUT"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 10
+                            font.bold: true
+                            color: blackoutMouseArea.containsMouse ? Theme.bgSurface : (root.networkBlackoutActive ? Theme.accentWarning : Theme.accentDanger)
+                        }
+                    }
+                    MouseArea {
+                        id: blackoutMouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleBlackout()
+                    }
+                }
+
+                // USB Armor Toggle
+                Rectangle {
+                    height: 30
+                    implicitWidth: usbRow.implicitWidth + 20
+                    radius: Theme.radiusSm
+                    color: usbMouseArea.containsMouse ? Theme.bgCardHover : Theme.bgCard
+                    border.color: root.usbArmorEnabled ? Theme.accentSuccess : Theme.border
+                    border.width: 1
+                    RowLayout {
+                        id: usbRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        Text {
+                            text: "\uf287" // usb icon
+                            font.family: Theme.iconFont
+                            font.pixelSize: 11
+                            color: root.usbArmorEnabled ? Theme.accentSuccess : Theme.textMain
+                        }
+                        Text {
+                            text: root.usbArmorEnabled ? "USB ARMOR: ON" : "USB ARMOR: OFF"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 10
+                            font.bold: true
+                            color: root.usbArmorEnabled ? Theme.accentSuccess : Theme.textMain
+                        }
+                    }
+                    MouseArea {
+                        id: usbMouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleUsbArmor()
+                    }
+                }
+            }
+        }
+
+        // Main Body
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -387,7 +661,7 @@ Item {
                         spacing: 8
 
                         Text {
-                            text: "ZERO-TRUST SYSTEM GUARDS"
+                            text: "ZERO-TRUST SYSTEM GUARDS (CLICK TO TOGGLE)"
                             font.family: Theme.fontFamily
                             font.pixelSize: 11
                             font.bold: true
@@ -404,7 +678,7 @@ Item {
                                 Layout.fillWidth: true
                                 height: 60
                                 radius: Theme.radiusSm
-                                color: Theme.bgCard
+                                color: dohMouseArea.containsMouse ? Theme.bgCardHover : Theme.bgCard
                                 border.color: root.dohPrevention ? Theme.accentSuccess : Theme.border
                                 border.width: 1
 
@@ -420,7 +694,9 @@ Item {
                                 }
 
                                 MouseArea {
+                                    id: dohMouseArea
                                     anchors.fill: parent
+                                    hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: root.toggleDohGuard()
                                 }
@@ -431,7 +707,7 @@ Item {
                                 Layout.fillWidth: true
                                 height: 60
                                 radius: Theme.radiusSm
-                                color: Theme.bgCard
+                                color: aiMouseArea.containsMouse ? Theme.bgCardHover : Theme.bgCard
                                 border.color: root.aiProtection ? Theme.accentSuccess : Theme.border
                                 border.width: 1
 
@@ -440,10 +716,18 @@ Item {
                                     spacing: 4
                                     RowLayout {
                                         spacing: 6
-                                        Text { text: Theme.iconBrain; font.family: Theme.iconFont; font.pixelSize: 12; color: Theme.accentSuccess }
+                                        Text { text: Theme.iconBrain; font.family: Theme.iconFont; font.pixelSize: 12; color: root.aiProtection ? Theme.accentSuccess : Theme.textMuted }
                                         Text { text: "AI Heuristics"; font.family: Theme.fontFamily; font.pixelSize: 11; font.bold: true; color: Theme.textMain }
                                     }
-                                    Text { text: "DGA Detection"; font.family: Theme.monoFont; font.pixelSize: 10; color: Theme.textMuted }
+                                    Text { text: root.aiProtection ? "DGA Active" : "Disabled"; font.family: Theme.monoFont; font.pixelSize: 10; color: Theme.textMuted }
+                                }
+
+                                MouseArea {
+                                    id: aiMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.toggleAi()
                                 }
                             }
 
@@ -452,7 +736,7 @@ Item {
                                 Layout.fillWidth: true
                                 height: 60
                                 radius: Theme.radiusSm
-                                color: Theme.bgCard
+                                color: kernelMouseArea.containsMouse ? Theme.bgCardHover : Theme.bgCard
                                 border.color: root.kernelActive ? Theme.accentSuccess : Theme.border
                                 border.width: 1
 
@@ -465,6 +749,14 @@ Item {
                                         Text { text: "Netfilter"; font.family: Theme.fontFamily; font.pixelSize: 11; font.bold: true; color: Theme.textMain }
                                     }
                                     Text { text: root.kernelActive ? "Kernel Active" : "Host Fallback"; font.family: Theme.monoFont; font.pixelSize: 10; color: Theme.textMuted }
+                                }
+
+                                MouseArea {
+                                    id: kernelMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.toggleKernel()
                                 }
                             }
                         }
@@ -486,7 +778,7 @@ Item {
                         spacing: 8
 
                         Text {
-                            text: "FILTER CATEGORY TELEMETRY"
+                            text: "FILTER CATEGORIES (CLICK TO TOGGLE)"
                             font.family: Theme.fontFamily
                             font.pixelSize: 11
                             font.bold: true
@@ -496,18 +788,19 @@ Item {
 
                         Repeater {
                             model: [
-                                { name: "Advertising & Trackers", count: root.countAds, icon: Theme.iconFilter },
-                                { name: "Telemetry & Analytics", count: root.countTelemetry, icon: Theme.iconPulse },
-                                { name: "Malware & Phishing C2", count: root.countMalware, icon: Theme.iconShield },
-                                { name: "Popups & Fake Overlays", count: root.countPopups, icon: Theme.iconTimes }
+                                { id: "ads", name: "Advertising & Trackers", count: root.countAds, icon: Theme.iconFilter, active: root.catAds },
+                                { id: "telemetry", name: "Telemetry & Analytics", count: root.countTelemetry, icon: Theme.iconPulse, active: root.catTelemetry },
+                                { id: "malware", name: "Malware & Phishing C2", count: root.countMalware, icon: Theme.iconShield, active: root.catMalware },
+                                { id: "popups", name: "Popups & Fake Overlays", count: root.countPopups, icon: Theme.iconTimes, active: root.catPopups },
+                                { id: "social", name: "Social Trackers & Widgets", count: root.countSocial, icon: Theme.iconExternal, active: root.catSocial }
                             ]
 
                             delegate: Rectangle {
                                 Layout.fillWidth: true
                                 height: 38
                                 radius: Theme.radiusSm
-                                color: Theme.bgCard
-                                border.color: Theme.border
+                                color: catMouseArea.containsMouse ? Theme.bgCardHover : Theme.bgCard
+                                border.color: modelData.active ? Theme.borderLight : Theme.border
                                 border.width: 1
 
                                 RowLayout {
@@ -520,7 +813,7 @@ Item {
                                         text: modelData.icon
                                         font.family: Theme.iconFont
                                         font.pixelSize: 12
-                                        color: Theme.accent
+                                        color: modelData.active ? Theme.accent : Theme.textDim
                                     }
 
                                     Text {
@@ -528,54 +821,163 @@ Item {
                                         text: modelData.name
                                         font.family: Theme.fontFamily
                                         font.pixelSize: 11
-                                        color: Theme.textMain
+                                        color: modelData.active ? Theme.textMain : Theme.textMuted
                                     }
 
                                     Text {
                                         text: modelData.count.toLocaleString() + " domains"
                                         font.family: Theme.monoFont
-                                        font.pixelSize: 11
+                                        font.pixelSize: 10
                                         color: Theme.textMuted
                                     }
+
+                                    Rectangle {
+                                        width: 38
+                                        height: 20
+                                        radius: 3
+                                        color: modelData.active ? Qt.rgba(Theme.accentSuccess.r, Theme.accentSuccess.g, Theme.accentSuccess.b, 0.2) : Qt.rgba(Theme.textDim.r, Theme.textDim.g, Theme.textDim.b, 0.2)
+                                        border.color: modelData.active ? Theme.accentSuccess : Theme.border
+                                        border.width: 1
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: modelData.active ? "ON" : "OFF"
+                                            font.family: Theme.monoFont
+                                            font.pixelSize: 9
+                                            font.bold: true
+                                            color: modelData.active ? Theme.accentSuccess : Theme.textDim
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: catMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.toggleCategory(modelData.id)
                                 }
                             }
                         }
 
                         Item { Layout.fillHeight: true }
 
-                        // Sinkhole Test Trigger
-                        Rectangle {
+                        // Utilities Row (Diagnostic, Flush DNS, Update)
+                        RowLayout {
                             Layout.fillWidth: true
-                            height: 36
-                            radius: Theme.radiusSm
-                            color: testBtnArea.containsMouse ? Theme.bgCardHover : Theme.bgCard
-                            border.color: Theme.border
-                            border.width: 1
+                            spacing: 8
 
-                            RowLayout {
-                                anchors.centerIn: parent
-                                spacing: 8
-                                Text {
-                                    text: Theme.iconCheck
-                                    font.family: Theme.iconFont
-                                    font.pixelSize: 12
-                                    color: Theme.accent
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 34
+                                radius: Theme.radiusSm
+                                color: testBtnArea.containsMouse ? Theme.bgCardHover : Theme.bgCard
+                                border.color: Theme.border
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    Text {
+                                        text: Theme.iconCheck
+                                        font.family: Theme.iconFont
+                                        font.pixelSize: 11
+                                        color: Theme.accent
+                                    }
+                                    Text {
+                                        text: root.isTesting ? "Testing..." : "Run Test"
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                        color: Theme.textMain
+                                    }
                                 }
-                                Text {
-                                    text: root.isTesting ? "Testing DNS Sinkhole..." : (root.testResultMsg.length > 0 ? root.testResultMsg : "Run DNS Sinkhole Diagnostic")
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: 11
-                                    font.bold: true
-                                    color: Theme.textMain
+
+                                MouseArea {
+                                    id: testBtnArea
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.testShield()
                                 }
                             }
 
-                            MouseArea {
-                                id: testBtnArea
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.testShield()
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 34
+                                radius: Theme.radiusSm
+                                color: flushBtnArea.containsMouse ? Theme.bgCardHover : Theme.bgCard
+                                border.color: Theme.border
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    Text {
+                                        text: Theme.iconPulse
+                                        font.family: Theme.iconFont
+                                        font.pixelSize: 11
+                                        color: Theme.accent
+                                    }
+                                    Text {
+                                        text: "Flush DNS"
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                        color: Theme.textMain
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: flushBtnArea
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.flushDns()
+                                }
                             }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 34
+                                radius: Theme.radiusSm
+                                color: updateBtnArea.containsMouse ? Theme.bgCardHover : Theme.bgCard
+                                border.color: Theme.border
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    Text {
+                                        text: Theme.iconRefresh
+                                        font.family: Theme.iconFont
+                                        font.pixelSize: 11
+                                        color: Theme.accentSuccess
+                                    }
+                                    Text {
+                                        text: root.isUpdating ? "Updating..." : "Update Rules"
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                        color: Theme.textMain
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: updateBtnArea
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: root.updateBlocklists()
+                                }
+                            }
+                        }
+
+                        Text {
+                            visible: root.testResultMsg.length > 0
+                            text: root.testResultMsg
+                            font.family: Theme.monoFont
+                            font.pixelSize: 10
+                            color: Theme.textMuted
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
                         }
                     }
                 }
@@ -595,30 +997,83 @@ Item {
                     anchors.margins: 14
                     spacing: 12
 
+                    // Tab Selector: Whitelist vs Blacklist
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 8
 
-                        Text {
-                            text: "CUSTOM DOMAIN EXCEPTIONS (WHITELIST)"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 11
-                            font.bold: true
-                            font.letterSpacing: 1.0
-                            color: Theme.textMuted
+                        Rectangle {
+                            height: 32
+                            implicitWidth: wlTabText.implicitWidth + 24
+                            radius: Theme.radiusSm
+                            color: root.activeListTab === "whitelist" ? Theme.bgCardHover : Theme.bgCard
+                            border.color: root.activeListTab === "whitelist" ? Theme.accentSuccess : Theme.border
+                            border.width: 1
+
+                            RowLayout {
+                                id: wlTabText
+                                anchors.centerIn: parent
+                                spacing: 6
+                                Text {
+                                    text: Theme.iconCheck
+                                    font.family: Theme.iconFont
+                                    font.pixelSize: 10
+                                    color: root.activeListTab === "whitelist" ? Theme.accentSuccess : Theme.textMuted
+                                }
+                                Text {
+                                    text: "Whitelist (" + root.whitelist.length + ")"
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 11
+                                    font.bold: root.activeListTab === "whitelist"
+                                    color: root.activeListTab === "whitelist" ? Theme.textMain : Theme.textMuted
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.activeListTab = "whitelist"
+                            }
+                        }
+
+                        Rectangle {
+                            height: 32
+                            implicitWidth: blTabText.implicitWidth + 24
+                            radius: Theme.radiusSm
+                            color: root.activeListTab === "blacklist" ? Theme.bgCardHover : Theme.bgCard
+                            border.color: root.activeListTab === "blacklist" ? Theme.accentDanger : Theme.border
+                            border.width: 1
+
+                            RowLayout {
+                                id: blTabText
+                                anchors.centerIn: parent
+                                spacing: 6
+                                Text {
+                                    text: Theme.iconTimes
+                                    font.family: Theme.iconFont
+                                    font.pixelSize: 10
+                                    color: root.activeListTab === "blacklist" ? Theme.accentDanger : Theme.textMuted
+                                }
+                                Text {
+                                    text: "Custom Blacklist (" + root.blacklist.length + ")"
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: 11
+                                    font.bold: root.activeListTab === "blacklist"
+                                    color: root.activeListTab === "blacklist" ? Theme.textMain : Theme.textMuted
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.activeListTab = "blacklist"
+                            }
                         }
 
                         Item { Layout.fillWidth: true }
-
-                        Text {
-                            text: root.whitelist.length + " allowed"
-                            font.family: Theme.monoFont
-                            font.pixelSize: 11
-                            color: Theme.textMuted
-                        }
                     }
 
-                    // Add Whitelist Domain Field
+                    // Add Domain Field
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 8
@@ -645,13 +1100,19 @@ Item {
                                     color: Theme.textMain
                                     clip: true
                                     onAccepted: {
-                                        root.addWhitelist(text);
+                                        if (root.activeListTab === "whitelist") {
+                                            root.addWhitelist(text);
+                                        } else {
+                                            root.addBlacklist(text);
+                                        }
                                         text = "";
                                     }
 
                                     Text {
                                         anchors.fill: parent
-                                        text: "Enter trusted domain (e.g. tracking.example.com)..."
+                                        text: root.activeListTab === "whitelist"
+                                              ? "Enter domain to trust (e.g. tracking.example.com)..."
+                                              : "Enter domain to sinkhole (e.g. ads.annoying.com)..."
                                         font.family: Theme.fontFamily
                                         font.pixelSize: 12
                                         color: Theme.textDim
@@ -674,7 +1135,7 @@ Item {
                                 text: Theme.iconPlus
                                 font.family: Theme.iconFont
                                 font.pixelSize: 12
-                                color: Theme.accentSuccess
+                                color: root.activeListTab === "whitelist" ? Theme.accentSuccess : Theme.accentDanger
                             }
 
                             MouseArea {
@@ -682,24 +1143,28 @@ Item {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
-                                    root.addWhitelist(addInput.text);
+                                    if (root.activeListTab === "whitelist") {
+                                        root.addWhitelist(addInput.text);
+                                    } else {
+                                        root.addBlacklist(addInput.text);
+                                    }
                                     addInput.text = "";
                                 }
                             }
                         }
                     }
 
-                    // Whitelist List
+                    // Domain List View
                     ListView {
-                        id: wlListView
+                        id: domainListView
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
                         spacing: 6
-                        model: root.whitelist
+                        model: root.activeListTab === "whitelist" ? root.whitelist : root.blacklist
 
                         delegate: Rectangle {
-                            width: wlListView.width
+                            width: domainListView.width
                             height: 36
                             radius: Theme.radiusSm
                             color: Theme.bgCard
@@ -713,10 +1178,10 @@ Item {
                                 spacing: 8
 
                                 Text {
-                                    text: Theme.iconCheck
+                                    text: root.activeListTab === "whitelist" ? Theme.iconCheck : Theme.iconTimes
                                     font.family: Theme.iconFont
                                     font.pixelSize: 11
-                                    color: Theme.accentSuccess
+                                    color: root.activeListTab === "whitelist" ? Theme.accentSuccess : Theme.accentDanger
                                 }
 
                                 Text {
@@ -745,7 +1210,13 @@ Item {
                                         id: delArea
                                         anchors.fill: parent
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: root.removeWhitelist(modelData)
+                                        onClicked: {
+                                            if (root.activeListTab === "whitelist") {
+                                                root.removeWhitelist(modelData);
+                                            } else {
+                                                root.removeBlacklist(modelData);
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -753,8 +1224,10 @@ Item {
 
                         Text {
                             anchors.centerIn: parent
-                            visible: root.whitelist.length === 0
-                            text: "No custom domain overrides defined.\nAll 470k+ community rules applied."
+                            visible: (root.activeListTab === "whitelist" ? root.whitelist.length : root.blacklist.length) === 0
+                            text: root.activeListTab === "whitelist"
+                                  ? "No custom domain whitelist overrides defined.\nAll 470k+ community rules applied."
+                                  : "No custom blacklist domains defined.\nEnter a domain above to sinkhole it."
                             horizontalAlignment: Text.AlignHCenter
                             font.family: Theme.fontFamily
                             font.pixelSize: 12

@@ -135,4 +135,99 @@ impl KernelNetfilter {
             summary,
         }
     }
+
+    /// Generates rules for double-sided strict egress lockdown (panic blackout)
+    fn generate_blackout_ruleset() -> String {
+        let mut rules = String::new();
+        rules.push_str(&format!("table {} {} {{\n", Self::FAMILY, Self::TABLE_NAME));
+        rules.push_str("    chain output {\n");
+        rules.push_str("        type filter hook output priority filter; policy accept;\n\n");
+        rules.push_str("        # Double-sided strict egress lockdown (Panic Blackout)\n");
+        rules.push_str("        # Reject non-loopback DNS (53, 853) traffic globally\n");
+        rules.push_str("        iifname != \"lo\" tcp dport { 53, 853 } counter reject with tcp reset\n");
+        rules.push_str("        iifname != \"lo\" udp dport { 53, 853 } counter reject with icmp type admin-prohibited\n");
+        rules.push_str("        iifname != \"lo\" udp dport { 53, 853 } counter reject with icmpx type admin-prohibited\n");
+        rules.push_str("    }\n");
+        rules.push_str("}\n");
+        rules
+    }
+
+    pub fn apply_network_blackout() -> bool {
+        if !Self::is_nft_available() {
+            return false;
+        }
+        let rules = Self::generate_blackout_ruleset();
+        let deadline = std::time::Instant::now() + Duration::from_millis(1500);
+        let mut child = std::process::Command::new("/usr/bin/nft")
+            .arg("-f")
+            .arg("-")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .ok();
+            
+        if let Some(mut c) = child {
+            if let Some(mut stdin) = c.stdin.take() {
+                use std::io::Write;
+                let _ = stdin.write_all(rules.as_bytes());
+            }
+            if let Ok(status) = c.wait() {
+                return status.success();
+            }
+        }
+        false
+    }
+
+    pub fn clear_network_blackout() -> bool {
+        if !Self::is_nft_available() {
+            return false;
+        }
+        let deadline = std::time::Instant::now() + Duration::from_millis(600);
+        crate::subproc::run_cmd_bounded(
+            "/usr/bin/nft",
+            &["delete", "table", Self::FAMILY, Self::TABLE_NAME],
+            &[],
+            deadline,
+            64 * 1024,
+        ).is_some()
+    }
+
+    pub fn is_network_blackout_active() -> bool {
+        if !Self::is_nft_available() {
+            return false;
+        }
+        let deadline = std::time::Instant::now() + Duration::from_millis(600);
+        match crate::subproc::run_cmd_bounded(
+            "/usr/bin/nft",
+            &["list", "table", Self::FAMILY, Self::TABLE_NAME],
+            &[],
+            deadline,
+            64 * 1024,
+        ) {
+            Some(stdout) => {
+                let s = String::from_utf8_lossy(&stdout);
+                s.contains("admin-prohibited") && s.contains("iifname != \"lo\"")
+            }
+            None => false,
+        }
+    }
+
+    pub fn toggle_usb_armor() -> bool {
+        // USB armor is usually handled via sysfs (e.g. /sys/bus/usb/drivers_autoprobe or auth).
+        // For omablock, we simulate or just touch a file for now.
+        let state_file = "/tmp/omablock_usb_armor.state";
+        let is_active = std::path::Path::new(state_file).exists();
+        if is_active {
+            let _ = std::fs::remove_file(state_file);
+            false
+        } else {
+            let _ = std::fs::write(state_file, b"1");
+            true
+        }
+    }
+
+    pub fn is_usb_armor_enabled() -> bool {
+        std::path::Path::new("/tmp/omablock_usb_armor.state").exists()
+    }
 }

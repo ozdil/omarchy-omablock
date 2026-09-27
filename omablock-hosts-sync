@@ -99,6 +99,7 @@ def flush_dns_cache():
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
+            timeout=10,
         )
     except Exception:
         pass
@@ -157,8 +158,10 @@ def ensure_backup():
         return
 
     try:
-        with open(HOSTS_PATH, "r", encoding="utf-8", errors="ignore") as src:
-            content = src.read()
+        flags_r = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd_r = os.open(HOSTS_PATH, flags_r)
+        with open(fd_r, "r", encoding="utf-8", errors="ignore") as src:
+            content = src.read(32 * 1024 * 1024)
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(BACKUP_PATH, flags, 0o644)
         with open(fd, "w", encoding="utf-8") as dst:
@@ -171,22 +174,27 @@ def ensure_backup():
 
 def get_status():
     """Checks if OmaBlock is currently active in /etc/hosts."""
-    if not os.path.exists(HOSTS_PATH):
+    if not os.path.exists(HOSTS_PATH) or os.path.islink(HOSTS_PATH):
         print('{"active": false, "rule_count": 0}')
         return
 
     count = 0
     in_block = False
-    with open(HOSTS_PATH, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            if BEGIN_MARKER in line:
-                in_block = True
-                continue
-            if END_MARKER in line:
-                in_block = False
-                break
-            if in_block and line.startswith("0.0.0.0 "):
-                count += 1
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(HOSTS_PATH, flags)
+        with open(fd, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if BEGIN_MARKER in line:
+                    in_block = True
+                    continue
+                if END_MARKER in line:
+                    in_block = False
+                    break
+                if in_block and line.startswith("0.0.0.0 "):
+                    count += 1
+    except Exception:
+        pass
 
     active = in_block or count > 0
     print(f'{{"active": {str(active).lower()}, "rule_count": {count}}}')
@@ -209,39 +217,53 @@ def apply_rules(rules_file: str):
         sys.exit(1)
 
     valid_domains = []
-    with open(rules_file, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
+    MAX_DOMAINS = 500_000
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(rules_file, flags)
+        with open(fd, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
 
-            # Handle either "0.0.0.0 domain" or "domain"
-            parts = line.split()
-            if len(parts) >= 2 and parts[0] in ("0.0.0.0", "127.0.0.1"):
-                domain = parts[1].strip().lower()
-            elif len(parts) == 1:
-                domain = parts[0].strip().lower()
-            else:
-                continue
+                # Handle either "0.0.0.0 domain" or "domain"
+                parts = line.split()
+                if len(parts) >= 2 and parts[0] in ("0.0.0.0", "127.0.0.1"):
+                    domain = parts[1].strip().lower()
+                elif len(parts) == 1:
+                    domain = parts[0].strip().lower()
+                else:
+                    continue
 
-            # Strip port or trailing dot
-            domain = domain.rstrip(".")
-            if (
-                domain in RESERVED_DOMAINS
-                or "." not in domain
-                or domain.endswith((".local", ".localhost", ".lan", ".internal", ".arpa"))
-            ):
-                continue
+                # Strip port or trailing dot
+                domain = domain.rstrip(".")
+                if (
+                    domain in RESERVED_DOMAINS
+                    or "." not in domain
+                    or domain.endswith((".local", ".localhost", ".lan", ".internal", ".arpa"))
+                ):
+                    continue
 
-            # Validate domain format
-            if DOMAIN_REGEX.match(domain):
-                valid_domains.append(domain)
+                # Validate domain format
+                if DOMAIN_REGEX.match(domain):
+                    valid_domains.append(domain)
+                    if len(valid_domains) >= MAX_DOMAINS:
+                        break
+    except Exception as e:
+        print(f"Error reading rules file '{rules_file}': {e}", file=sys.stderr)
+        sys.exit(1)
 
     # Read current hosts
     content = ""
-    if os.path.exists(HOSTS_PATH):
-        with open(HOSTS_PATH, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read()
+    if os.path.exists(HOSTS_PATH) and not os.path.islink(HOSTS_PATH):
+        try:
+            flags_r = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            fd_r = os.open(HOSTS_PATH, flags_r)
+            with open(fd_r, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read(32 * 1024 * 1024)
+        except Exception as e:
+            print(f"Warning: Could not read {HOSTS_PATH}: {e}", file=sys.stderr)
 
     ensure_backup()
     clean_hosts = strip_omablock_block(content)
@@ -311,7 +333,7 @@ table inet omablock {
         fd = os.open(tmp_nft, flags, 0o600)
         with open(fd, "w", encoding="utf-8") as f:
             f.write(nft_script)
-        subprocess.run([nft_bin, "-f", tmp_nft], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run([nft_bin, "-f", tmp_nft], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
     finally:
         if os.path.lexists(tmp_nft):
             try:
@@ -325,17 +347,24 @@ def clear_nftables_rules():
     nft_bin = shutil.which("nft")
     if not nft_bin:
         return
-    subprocess.run([nft_bin, "delete", "table", "inet", "omablock"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run([nft_bin, "delete", "table", "inet", "omablock"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
 
 
 def clear_rules():
     """Removes OmaBlock rules from /etc/hosts and kernel Netfilter table."""
     clear_nftables_rules()
-    if not os.path.exists(HOSTS_PATH):
+    if not os.path.exists(HOSTS_PATH) or os.path.islink(HOSTS_PATH):
         return
 
-    with open(HOSTS_PATH, "r", encoding="utf-8", errors="ignore") as f:
-        content = f.read()
+    content = ""
+    try:
+        flags_r = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd_r = os.open(HOSTS_PATH, flags_r)
+        with open(fd_r, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read(32 * 1024 * 1024)
+    except Exception as e:
+        print(f"Error reading {HOSTS_PATH}: {e}", file=sys.stderr)
+        return
 
     if BEGIN_MARKER not in content:
         flush_dns_cache()

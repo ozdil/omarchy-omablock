@@ -132,6 +132,20 @@ impl DgaClassifier {
         (ratio, max_consonant_run)
     }
 
+    /// Detects IDN Homograph attacks (Punycode 'xn--' prefix or mixed Cyrillic/Latin scripts)
+    pub fn detect_idn_homograph(domain: &str) -> bool {
+        if domain.contains("xn--") {
+            return true;
+        }
+        let has_cyrillic = domain.chars().any(|c| {
+            let u = c as u32;
+            u >= 0x0400 && u <= 0x04FF
+        });
+        let has_latin = domain.chars().any(|c| c.is_ascii_alphabetic());
+        
+        has_cyrillic && has_latin
+    }
+
     /// Computes classic Levenshtein distance without heap allocations if small
     pub fn levenshtein(a: &str, b: &str) -> usize {
         let b_len = b.chars().count();
@@ -210,6 +224,13 @@ impl DgaClassifier {
 
         // 4. Typosquatting & Phishing Detection with Leetspeak Normalization
         let mut typosquat_found = false;
+        
+        if Self::detect_idn_homograph(&domain) {
+            risk_score += 0.95;
+            reasons.push("Kritik Uyari: IDN Homograph / Punycode (Karisik Alfabe) Spoofing Tespiti".to_string());
+            typosquat_found = true;
+        }
+
         let leet_normalized: String = main_label.chars().map(|c| match c {
             '0' => 'o',
             '1' => 'l',

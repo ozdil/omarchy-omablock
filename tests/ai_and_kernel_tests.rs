@@ -108,6 +108,28 @@ fn test_dga_classifier_tracker_heuristics() {
 }
 
 #[test]
+fn test_dga_classifier_idn_homograph() {
+    let classifier = DgaClassifier::new();
+
+    let homograph_domains = [
+        "xn--80ak6aa92e.com",
+        "xn--googl-06d.com",
+        "распр.com", // Cyrillic string combined with Latin .com
+        "googlе.com", // Contains Cyrillic 'е'
+    ];
+
+    for domain in &homograph_domains {
+        let res = classifier.assess(domain);
+        assert!(
+            res.is_suspicious,
+            "IDN Homograph domain '{}' should be flagged as suspicious (score: {})",
+            domain, res.risk_score
+        );
+        assert_eq!(res.classification, AiClassification::PhishingTyposquat);
+    }
+}
+
+#[test]
 fn test_kernel_netfilter_ruleset_generation() {
     let test_ips: Vec<IpAddr> = vec![
         "1.1.1.1".parse().unwrap(),

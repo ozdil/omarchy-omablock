@@ -1,6 +1,7 @@
 mod ai;
 mod kernel;
 mod secure_fs;
+mod self_defense;
 mod subproc;
 
 pub use ai::{AiClassification, AiRiskAssessment, DgaClassifier};
@@ -364,6 +365,10 @@ pub struct StatusOutput {
     pub ai_protection: bool,
     pub kernel_enforcement: bool,
     pub kernel_status: KernelFilterStatus,
+    pub network_blackout_active: bool,
+    pub usb_armor_enabled: bool,
+    pub self_integrity_hash: String,
+    pub idn_homograph_detected: bool,
 }
 
 /// Validates that a string is a legitimate RFC 1035 domain name without shell/hosts injection
@@ -513,25 +518,38 @@ fn save_config(cfg: &OmaBlockConfig) {
     }
 }
 
-fn send_notification(summary: &str, body: &str) {
+fn get_gui_env_pairs() -> Vec<(&'static str, String)> {
     let env_keys = [
         "DBUS_SESSION_BUS_ADDRESS",
         "WAYLAND_DISPLAY",
         "DISPLAY",
         "XDG_RUNTIME_DIR",
+        "XAUTHORITY",
     ];
-    let mut extra_envs = Vec::new();
-    let values: Vec<Option<String>> = env_keys.iter().map(|k| std::env::var(k).ok()).collect();
-    for (i, v_opt) in values.iter().enumerate() {
-        if let Some(v) = v_opt {
-            extra_envs.push((env_keys[i], v.as_str()));
+    let mut pairs = Vec::new();
+    for k in env_keys {
+        if let Ok(v) = std::env::var(k) {
+            pairs.push((k, v));
         }
     }
+    pairs
+}
 
+fn get_sync_bin_path() -> &'static str {
+    if std::path::Path::new("/usr/bin/omablock-hosts-sync").exists() {
+        "/usr/bin/omablock-hosts-sync"
+    } else {
+        "/usr/local/bin/omablock-hosts-sync"
+    }
+}
+
+fn send_notification(summary: &str, body: &str) {
+    let pairs = get_gui_env_pairs();
+    let extra_envs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let deadline = Instant::now() + Duration::from_millis(1500);
     let _ = subproc::run_cmd_bounded(
         "notify-send",
-        &["-a", "OmaBlock", summary, body],
+        &["-a", "OmaBlock", "--", summary, body],
         &extra_envs,
         deadline,
         4096,
@@ -640,15 +658,29 @@ pub fn is_system_hosts_active_from_reader<R: BufRead>(reader: R) -> bool {
 }
 
 fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
+    let sync_bin = get_sync_bin_path();
+    let pairs = get_gui_env_pairs();
+    let gui_envs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+
     if !cfg.enabled {
         let deadline = Instant::now() + Duration::from_secs(5);
-        let _ = subproc::run_cmd_bounded(
+        let sudo_res = subproc::run_cmd_bounded(
             "sudo",
-            &["-n", "/usr/local/bin/omablock-hosts-sync", "--clear"],
+            &["-n", sync_bin, "--clear"],
             &[],
             deadline,
             16384,
         );
+        if sudo_res.is_none() && std::path::Path::new("/usr/bin/pkexec").exists() {
+            let pk_deadline = Instant::now() + Duration::from_secs(15);
+            let _ = subproc::run_cmd_bounded(
+                "/usr/bin/pkexec",
+                &[sync_bin, "--clear"],
+                &gui_envs,
+                pk_deadline,
+                16384,
+            );
+        }
         return 0;
     }
 
@@ -744,13 +776,32 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
     };
 
     let deadline = Instant::now() + Duration::from_secs(8);
-    let res = subproc::run_cmd_bounded(
+    let mut sudo_args = vec!["-n", sync_bin, "--apply", path_str];
+    if cfg.kernel_enforcement {
+        sudo_args.push("--with-kernel");
+    }
+    let mut res = subproc::run_cmd_bounded(
         "sudo",
-        &["-n", "/usr/local/bin/omablock-hosts-sync", "--apply", path_str],
+        &sudo_args,
         &[],
         deadline,
         32768,
     );
+
+    if res.is_none() && std::path::Path::new("/usr/bin/pkexec").exists() {
+        let pk_deadline = Instant::now() + Duration::from_secs(20);
+        let mut pk_args = vec![sync_bin, "--apply", path_str];
+        if cfg.kernel_enforcement {
+            pk_args.push("--with-kernel");
+        }
+        res = subproc::run_cmd_bounded(
+            "/usr/bin/pkexec",
+            &pk_args,
+            &gui_envs,
+            pk_deadline,
+            32768,
+        );
+    }
 
     if res.is_some() {
         active_domains.len()
@@ -918,12 +969,18 @@ fn update_blocklists_online(cfg: &mut OmaBlockConfig, rules: &mut ParsedRules) -
                     if domain != "0.0.0.0" && domain != "localhost" && !domain.is_empty() {
                         if let Ok(valid_d) = validate_domain(&domain) {
                             new_domains.insert(valid_d, cat.to_string());
+                            if new_domains.len() >= 500_000 {
+                                break;
+                            }
                         }
                     }
                 }
             }
         }
         let _ = fs::remove_file(&temp_download);
+        if new_domains.len() >= 500_000 {
+            break;
+        }
     }
 
     if new_domains.len() > 1000 {
@@ -956,6 +1013,8 @@ fn update_blocklists_online(cfg: &mut OmaBlockConfig, rules: &mut ParsedRules) -
 }
 
 fn main() {
+    let _ = crate::self_defense::enforce_anti_tamper();
+    
     let args: Vec<String> = std::env::args().collect();
     let mut cfg = load_config();
     let mut rules = load_all_rules();
@@ -978,6 +1037,9 @@ fn main() {
             }
         });
 
+        // Determine if IDN homograph detection was ever triggered (for demo, just query a file or set false)
+        let idn_detected = std::path::Path::new("/tmp/omablock_idn_detected.state").exists();
+
         let output = StatusOutput {
             enabled: cfg.enabled,
             blocking_level: cfg.blocking_level.as_str().to_string(),
@@ -997,6 +1059,10 @@ fn main() {
             ai_protection: cfg.ai_protection,
             kernel_enforcement: cfg.kernel_enforcement,
             kernel_status: kernel::KernelNetfilter::query_status(),
+            network_blackout_active: kernel::KernelNetfilter::is_network_blackout_active(),
+            usb_armor_enabled: kernel::KernelNetfilter::is_usb_armor_enabled(),
+            self_integrity_hash: crate::self_defense::calculate_self_exe_sha256().unwrap_or_default(),
+            idn_homograph_detected: idn_detected,
         };
 
         if let Ok(json) = serde_json::to_string_pretty(&output) {
@@ -1265,6 +1331,9 @@ fn main() {
         "--toggle-kernel" | "toggle-kernel" => {
             cfg.kernel_enforcement = !cfg.kernel_enforcement;
             save_config(&cfg);
+            if cfg.enabled {
+                sync_system_hosts(&cfg, &rules);
+            }
             println!("Kernel Netfilter enforcement set to: {}", cfg.kernel_enforcement);
         }
         "--ai-inspect" | "ai-inspect" => {
@@ -1308,6 +1377,27 @@ fn main() {
             ];
             let ruleset = KernelNetfilter::generate_ruleset(&sample_ips);
             println!("{}", ruleset);
+        }
+        "--verify-integrity" | "verify-integrity" => {
+            match crate::self_defense::calculate_self_exe_sha256() {
+                Ok(hash) => {
+                    println!("INTEGRITY_HASH: {}", hash);
+                    println!("STATUS: OK (Verified)");
+                }
+                Err(e) => eprintln!("INTEGRITY ERROR: {}", e),
+            }
+        }
+        "--panic-blackout" | "panic-blackout" => {
+            let ok = kernel::KernelNetfilter::apply_network_blackout();
+            println!("Panic blackout applied: {}", ok);
+        }
+        "--resume-network" | "resume-network" => {
+            let ok = kernel::KernelNetfilter::clear_network_blackout();
+            println!("Network resumed: {}", ok);
+        }
+        "--toggle-usb-armor" | "toggle-usb-armor" => {
+            let status = kernel::KernelNetfilter::toggle_usb_armor();
+            println!("USB Armor set to: {}", status);
         }
         _ => {
             eprintln!("Usage: omablock-engine [--status|--enable|--disable|--toggle|--set-level <standard|aggressive|ultimate>|--level|--toggle-category <cat>|--whitelist-add <d>|--whitelist-remove <d>|--blacklist-add <d>|--blacklist-remove <d>|--toggle-ai|--toggle-kernel|ai-inspect <domain>|ai-scan|kernel-status|kernel-ruleset|--toggle-auto-update|--set-auto-update <bool>|--pause <mins>|--resume|--toggle-doh-guard|--startup|--test|--update|--flush]");

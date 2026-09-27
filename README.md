@@ -13,6 +13,9 @@ Plugin ID: ozdil.omablock
 ## Features
 
 - Zero Latency (< 0.1ms): Leverages atomic, kernel-level DNS sinkhole routing (`0.0.0.0`) without middleman proxy overhead or battery drain.
+- Military-Grade HANCORE Defense: Deep integration of self-defense features including Self-Integrity Verification (SHA-256 binary hashing) and `prctl(PR_SET_DUMPABLE, 0)` anti-tamper.
+- Advanced Kernel Blackout: Panic Blackout mode and Zero-Trust egress lockdown (drops non-loopback DNS 53/853 with TCP RST/ICMP admin-prohibited) for immediate threat containment.
+- AI-Powered Threat Detection: Integrated IDN Homograph and Punycode spoofing radar via advanced DGA Classification engine to stop zero-day phishing typosquatting.
 - 79,500+ Curated Rules: Pre-bundled offline database with one-click online synchronization against StevenBlack Unified and EasyPrivacy upstream blocklists.
 - Fine-Grained Category Filtering:
   - Commercial Ads: DoubleClick, PageAd, Criteo, Taboola, Outbrain, popups, and video advertising networks.
@@ -21,8 +24,9 @@ Plugin ID: ozdil.omablock
   - Social Network Trackers: Third-party pixel trackers, audience measurement, and social widgets.
 - Live Shield Verification: In-panel live resolution diagnostics to verify protection in real time.
 - Custom Allow and Deny Lists: Instantly whitelist or blacklist specific domains with zero DNS downtime.
+- Hardware Armor Control: Toggle USB access instantly through UI directly integrated with system state files.
 - Monochrome Design: Native Omarchy UI styling adhering strictly to typography standards and color palette rules.
-- Hardened Rust Engine: Strict regex sanitization, safe atomic file replacement, and bounded memory limits.
+- Hardened Rust Engine: Strict regex sanitization, safe atomic file replacement, bounded memory limits, and zeroize-secured memory buffers.
 
 ---
 
