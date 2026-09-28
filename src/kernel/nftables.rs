@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KernelFilterStatus {
@@ -157,24 +157,34 @@ impl KernelNetfilter {
             return false;
         }
         let rules = Self::generate_blackout_ruleset();
-        let child = std::process::Command::new("/usr/bin/nft")
+        let deadline = std::time::Instant::now() + Duration::from_millis(2000);
+        
+        let mut child = match std::process::Command::new("/usr/bin/nft")
             .arg("-f")
             .arg("-")
             .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .spawn()
-            .ok();
-            
-        if let Some(mut c) = child {
-            if let Some(mut stdin) = c.stdin.take() {
-                use std::io::Write;
-                let _ = stdin.write_all(rules.as_bytes());
-            }
-            if let Ok(status) = c.wait() {
+        {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            let _ = stdin.write_all(rules.as_bytes());
+        }
+
+        while Instant::now() < deadline {
+            if let Ok(Some(status)) = child.try_wait() {
                 return status.success();
             }
+            std::thread::sleep(Duration::from_millis(20));
         }
+
+        let _ = child.kill();
+        let _ = child.wait();
         false
     }
 
@@ -212,11 +222,19 @@ impl KernelNetfilter {
         }
     }
 
+    fn get_usb_armor_state_path() -> std::path::PathBuf {
+        if let Ok(home) = std::env::var("HOME") {
+            let dir = std::path::PathBuf::from(home).join(".local/state/omarchy/omablock");
+            let _ = std::fs::create_dir_all(&dir);
+            dir.join("usb_armor.state")
+        } else {
+            std::path::PathBuf::from("/tmp/omablock_usb_armor.state")
+        }
+    }
+
     pub fn toggle_usb_armor() -> bool {
-        // USB armor is usually handled via sysfs (e.g. /sys/bus/usb/drivers_autoprobe or auth).
-        // For omablock, we simulate or just touch a file for now.
-        let state_file = "/tmp/omablock_usb_armor.state";
-        let is_active = std::path::Path::new(state_file).exists();
+        let state_file = Self::get_usb_armor_state_path();
+        let is_active = state_file.exists();
         if is_active {
             let _ = std::fs::remove_file(state_file);
             false
@@ -227,6 +245,6 @@ impl KernelNetfilter {
     }
 
     pub fn is_usb_armor_enabled() -> bool {
-        std::path::Path::new("/tmp/omablock_usb_armor.state").exists()
+        Self::get_usb_armor_state_path().exists()
     }
 }

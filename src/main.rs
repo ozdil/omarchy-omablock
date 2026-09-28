@@ -422,10 +422,49 @@ fn check_pause_expiry(cfg: &mut OmaBlockConfig, rules: &ParsedRules) -> bool {
     false
 }
 
+fn get_user_home_dir() -> PathBuf {
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.trim().is_empty() {
+            return PathBuf::from(home);
+        }
+    }
+    #[cfg(unix)]
+    {
+        // SAFETY: getpwuid_r is POSIX-compliant thread-safe user lookup
+        let uid = unsafe { libc::getuid() };
+        let mut pwd = std::mem::MaybeUninit::<libc::passwd>::uninit();
+        let mut buf = vec![0u8; 4096];
+        let mut result = std::ptr::null_mut();
+        let ret = unsafe {
+            libc::getpwuid_r(
+                uid,
+                pwd.as_mut_ptr(),
+                buf.as_mut_ptr() as *mut libc::c_char,
+                buf.len(),
+                &mut result,
+            )
+        };
+        if ret == 0 && !result.is_null() {
+            let pwd_ref = unsafe { &*result };
+            if !pwd_ref.pw_dir.is_null() {
+                let c_str = unsafe { std::ffi::CStr::from_ptr(pwd_ref.pw_dir) };
+                if let Ok(s) = c_str.to_str() {
+                    if !s.is_empty() {
+                        return PathBuf::from(s);
+                    }
+                }
+            }
+        }
+    }
+    PathBuf::from("/tmp")
+}
+
 fn get_state_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/ozdil".to_string());
-    let dir = PathBuf::from(home).join(".local/state/omarchy/omablock");
-    let _ = secure_fs::ensure_state_dir(&dir);
+    let home = get_user_home_dir();
+    let dir = home.join(".local/state/omarchy/omablock");
+    if let Err(e) = secure_fs::ensure_state_dir(&dir) {
+        eprintln!("Warning: Failed to ensure secure state directory {:?}: {}", dir, e);
+    }
     dir
 }
 
@@ -484,8 +523,6 @@ fn get_gui_env_pairs() -> Vec<(&'static str, String)> {
 fn get_sync_bin_path() -> Option<&'static str> {
     if std::path::Path::new("/usr/bin/omablock-hosts-sync").exists() {
         Some("/usr/bin/omablock-hosts-sync")
-    } else if std::path::Path::new("/usr/local/bin/omablock-hosts-sync").exists() {
-        Some("/usr/local/bin/omablock-hosts-sync")
     } else {
         None
     }
@@ -997,8 +1034,8 @@ fn main() {
             }
         });
 
-        // Determine if IDN homograph detection was ever triggered (for demo, just query a file or set false)
-        let idn_detected = std::path::Path::new("/tmp/omablock_idn_detected.state").exists();
+        // Determine if IDN homograph detection was ever triggered
+        let idn_detected = get_state_dir().join("idn_detected.state").exists();
 
         let output = StatusOutput {
             enabled: cfg.enabled,

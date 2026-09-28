@@ -4,27 +4,6 @@ use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-#[repr(C)]
-struct PollFd {
-    fd: i32,
-    events: i16,
-    revents: i16,
-}
-
-const POLLIN: i16 = 0x0001;
-const POLLHUP: i16 = 0x0010;
-const POLLERR: i16 = 0x0008;
-
-const F_GETFL: i32 = 3;
-const F_SETFL: i32 = 4;
-const O_NONBLOCK: i32 = 2048; // 0o4000 on Linux
-
-extern "C" {
-    fn poll(fds: *mut PollFd, nfds: usize, timeout: i32) -> i32;
-    fn kill(pid: i32, sig: i32) -> i32;
-    fn fcntl(fd: i32, cmd: i32, arg: i32) -> i32;
-}
-
 /// Strictly reaps a process group:
 /// 1. Sends SIGTERM (15) to -pid
 /// 2. Waits 5-10ms
@@ -32,14 +11,14 @@ extern "C" {
 /// 4. Waits on direct child to prevent zombies
 pub fn reap_process_group(child: &mut std::process::Child, pid: i32) {
     if pid > 1 {
-        // SAFETY: kill(-pid, 15) sends SIGTERM to the process group with valid PID.
+        // SAFETY: kill(-pid, SIGTERM) sends SIGTERM to the process group with valid PID.
         unsafe {
-            kill(-pid, 15);
+            libc::kill(-pid, libc::SIGTERM);
         }
         std::thread::sleep(Duration::from_millis(5));
-        // SAFETY: kill(-pid, 9) sends SIGKILL to the process group with valid PID.
+        // SAFETY: kill(-pid, SIGKILL) sends SIGKILL to the process group with valid PID.
         unsafe {
-            kill(-pid, 9);
+            libc::kill(-pid, libc::SIGKILL);
         }
     }
     let _ = child.wait();
@@ -99,9 +78,9 @@ pub fn run_cmd_bounded(
 
     // SAFETY: F_GETFL and F_SETFL are standard POSIX fcntl operations on a valid pipe file descriptor.
     unsafe {
-        let flags = fcntl(raw_fd, F_GETFL, 0);
+        let flags = libc::fcntl(raw_fd, libc::F_GETFL, 0);
         if flags >= 0 {
-            let _ = fcntl(raw_fd, F_SETFL, flags | O_NONBLOCK);
+            let _ = libc::fcntl(raw_fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
         }
     }
 
@@ -153,14 +132,14 @@ pub fn run_cmd_bounded(
 
         let now = Instant::now();
         let remaining_ms = (deadline.saturating_duration_since(now).as_millis().min(50) as i32).max(1);
-        let mut pfd = PollFd {
+        let mut pfd = libc::pollfd {
             fd: raw_fd,
-            events: POLLIN | POLLHUP | POLLERR,
+            events: libc::POLLIN | libc::POLLHUP | libc::POLLERR,
             revents: 0,
         };
 
-        // SAFETY: poll() is called with a valid pointer to PollFd and 1 descriptor.
-        let ret = unsafe { poll(&mut pfd, 1, remaining_ms) };
+        // SAFETY: poll() is called with a valid pointer to pollfd and 1 descriptor.
+        let ret = unsafe { libc::poll(&mut pfd, 1, remaining_ms) };
         if ret < 0 {
             let err = std::io::Error::last_os_error();
             if err.kind() == std::io::ErrorKind::Interrupted {
@@ -172,7 +151,7 @@ pub fn run_cmd_bounded(
             continue;
         }
 
-        if pfd.revents & POLLIN != 0 {
+        if pfd.revents & libc::POLLIN != 0 {
             loop {
                 match stdout.read(&mut chunk) {
                     Ok(0) => {
@@ -205,7 +184,7 @@ pub fn run_cmd_bounded(
             }
         }
 
-        if pfd.revents & (POLLHUP | POLLERR) != 0 {
+        if pfd.revents & (libc::POLLHUP | libc::POLLERR) != 0 {
             loop {
                 match stdout.read(&mut chunk) {
                     Ok(0) => {

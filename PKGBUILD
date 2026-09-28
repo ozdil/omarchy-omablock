@@ -20,7 +20,6 @@ package() {
     install -Dm755 "target/release/omablock-engine" "${pkgdir}/usr/bin/omablock"
     install -Dm755 "target/release/omablock-engine" "${pkgdir}/usr/bin/omablock-engine"
     install -Dm755 "omablock-hosts-sync" "${pkgdir}/usr/bin/omablock-hosts-sync"
-    install -Dm755 "omablock-hosts-sync" "${pkgdir}/usr/local/bin/omablock-hosts-sync"
     install -Dm755 "omablock-dashboard" "${pkgdir}/usr/bin/omablock-dashboard"
     install -Dm755 "omablock-status" "${pkgdir}/usr/bin/omablock-status"
 
