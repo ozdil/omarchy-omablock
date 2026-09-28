@@ -1300,6 +1300,8 @@ fn main() {
                             cfg.categories.social = true;
                             cfg.categories.popups = true;
                             cfg.doh_prevention = true;
+                            cfg.ai_protection = true;
+                            cfg.kernel_enforcement = true;
                         }
                     }
                     save_config(&cfg);
