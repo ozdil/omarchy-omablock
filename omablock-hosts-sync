@@ -27,8 +27,10 @@ BANNER_COMMENT = (
     "# Managed automatically by OmaBlock (ozdil.omablock). Do not edit inside this block."
 )
 
-# Valid domain regex: alphanumeric, dots, hyphens; no slashes, backticks, nulls, spaces
-DOMAIN_REGEX = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9.-]{0,253}[a-zA-Z0-9]$")
+# RFC 1035 strict domain regex: labels 1-63 chars starting/ending with alphanumeric, separated by single dots
+DOMAIN_REGEX = re.compile(
+    r"^(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$"
+)
 
 
 POLICY_DIRS = [
@@ -227,11 +229,14 @@ def apply_rules(rules_file: str):
         print(f"Error: Rules file '{rules_file}' not found.", file=sys.stderr)
         sys.exit(1)
 
-    # Security check: verify rules_file is a regular file and not a symlink
+    # Security check: verify rules_file is a regular file, not a symlink, and within size limit
     try:
         st = os.lstat(rules_file)
         if os.path.islink(rules_file) or not os.path.isfile(rules_file):
             print(f"Security violation: Rules file '{rules_file}' must be a regular file, not a symlink.", file=sys.stderr)
+            sys.exit(1)
+        if st.st_size > 50 * 1024 * 1024:
+            print(f"Security violation: Rules file '{rules_file}' exceeds maximum 50 MiB limit.", file=sys.stderr)
             sys.exit(1)
     except Exception as e:
         print(f"Security violation: Could not verify rules file '{rules_file}': {e}", file=sys.stderr)
