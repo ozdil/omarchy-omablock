@@ -77,8 +77,8 @@ Panel {
   function setBlockingLevel(lvl) {
     actionProc.command = [root.resolveEnginePath(), "--set-level", lvl]
     actionProc.running = true
-    var label = lvl === "ultimate" ? "Maksimum (Anti-Popup)" : (lvl === "aggressive" ? "Gelişmiş" : "Standart")
-    root.showToast("Engelleme seviyesi: " + label)
+    var label = lvl === "ultimate" ? "Ultimate (Anti-Popup)" : (lvl === "aggressive" ? "Aggressive" : "Standard")
+    root.showToast("Blocking level: " + label)
   }
 
   function pauseShield(minutes) {
@@ -660,7 +660,7 @@ Panel {
 
         // ---------- Blocking Level Profile Section ----------
         PanelSectionHeader {
-          text: "ENGELLEME SEVİYESİ"
+          text: "BLOCKING LEVEL"
           fontFamily: root.fontFamily
         }
 
@@ -668,7 +668,7 @@ Panel {
           width: parent.width
           spacing: Style.space(8)
 
-          // 1. Standart
+          // 1. Standard
           BorderSurface {
             Layout.fillWidth: true
             implicitHeight: Style.space(38)
@@ -700,7 +700,7 @@ Panel {
 
               Text {
                 textFormat: Text.PlainText
-                text: "Standart"
+                text: "Standard"
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: root.blockingLevel === "standard"
@@ -709,7 +709,7 @@ Panel {
             }
           }
 
-          // 2. Gelişmiş
+          // 2. Aggressive
           BorderSurface {
             Layout.fillWidth: true
             implicitHeight: Style.space(38)
@@ -741,7 +741,7 @@ Panel {
 
               Text {
                 textFormat: Text.PlainText
-                text: "Gelişmiş"
+                text: "Aggressive"
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: root.blockingLevel === "aggressive"
@@ -750,7 +750,7 @@ Panel {
             }
           }
 
-          // 3. Maksimum (Anti-Popup)
+          // 3. Ultimate (Anti-Popup)
           BorderSurface {
             Layout.fillWidth: true
             implicitHeight: Style.space(38)
@@ -782,7 +782,7 @@ Panel {
 
               Text {
                 textFormat: Text.PlainText
-                text: "Maksimum"
+                text: "Ultimate"
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: root.blockingLevel === "ultimate"
@@ -818,10 +818,10 @@ Panel {
               textFormat: Text.PlainText
               Layout.fillWidth: true
               text: root.blockingLevel === "ultimate"
-                    ? "Maksimum Kalkan: Pop-up reklamlar, açılır pencereler ve yönlendirmeler tamamen engellenir."
+                    ? "Ultimate Shield: Full popup, redirect, telemetry, and tracking block with AI + Kernel filtering."
                     : (root.blockingLevel === "aggressive"
-                       ? "Gelişmiş Kalkan: Reklamlar, davranışsal takipçiler, pop-uplar ve telemetri engellenir."
-                       : "Standart Kalkan: Yalnızca temel reklam afişleri ve bilinen zararlı yazılımlar engellenir.")
+                       ? "Aggressive Shield: Commercial ads, behavioral trackers, popups, and telemetry blocked."
+                       : "Standard Shield: Essential ad banners and known malicious software blocked.")
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption - 1
               color: Color.foreground
@@ -1170,7 +1170,7 @@ Panel {
 
               Text {
                 textFormat: Text.PlainText
-                text: "Pop-up & Açılır Pencere Kalkanı"
+                text: "Pop-ups & Unwanted Windows"
                 color: Color.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.body
@@ -1181,7 +1181,7 @@ Panel {
 
               Text {
                 textFormat: Text.PlainText
-                text: (root.countPopups > 0 ? root.countPopups.toLocaleString() : "50,085") + " alan adı • Pop-up, pop-under, yönlendirmeler"
+                text: (root.countPopups > 0 ? root.countPopups.toLocaleString() : "50,085") + " domains • Pop-up, pop-under, redirects"
                 color: Color.muted
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
