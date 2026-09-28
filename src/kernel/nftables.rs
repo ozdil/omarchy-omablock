@@ -157,8 +157,7 @@ impl KernelNetfilter {
             return false;
         }
         let rules = Self::generate_blackout_ruleset();
-        let deadline = std::time::Instant::now() + Duration::from_millis(1500);
-        let mut child = std::process::Command::new("/usr/bin/nft")
+        let child = std::process::Command::new("/usr/bin/nft")
             .arg("-f")
             .arg("-")
             .stdin(std::process::Stdio::piped())

@@ -535,11 +535,13 @@ fn get_gui_env_pairs() -> Vec<(&'static str, String)> {
     pairs
 }
 
-fn get_sync_bin_path() -> &'static str {
+fn get_sync_bin_path() -> Option<&'static str> {
     if std::path::Path::new("/usr/bin/omablock-hosts-sync").exists() {
-        "/usr/bin/omablock-hosts-sync"
+        Some("/usr/bin/omablock-hosts-sync")
+    } else if std::path::Path::new("/usr/local/bin/omablock-hosts-sync").exists() {
+        Some("/usr/local/bin/omablock-hosts-sync")
     } else {
-        "/usr/local/bin/omablock-hosts-sync"
+        None
     }
 }
 
@@ -658,7 +660,19 @@ pub fn is_system_hosts_active_from_reader<R: BufRead>(reader: R) -> bool {
 }
 
 fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
-    let sync_bin = get_sync_bin_path();
+    let sync_bin = match get_sync_bin_path() {
+        Some(bin) => bin,
+        None => {
+            eprintln!("Notice: omablock-hosts-sync helper is not installed in system path (/usr/bin/omablock-hosts-sync).");
+            if cfg.enabled {
+                send_notification(
+                    "OmaBlock Helper Required",
+                    "To enable system-wide adblocking, install the package via 'makepkg -si' or pacman.",
+                );
+            }
+            return 0;
+        }
+    };
     let pairs = get_gui_env_pairs();
     let gui_envs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
 

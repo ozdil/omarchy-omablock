@@ -33,50 +33,17 @@ trap cleanup EXIT
 # Install user-facing binaries in ~/.local/bin
 /usr/bin/install -d -m 755 "${HOME}/.local/bin"
 /usr/bin/install -m 755 "${DIR}/omablock-engine" "${HOME}/.local/bin/omablock-engine"
+/usr/bin/install -m 755 "${DIR}/omablock-engine" "${HOME}/.local/bin/omablock"
 /usr/bin/install -m 755 "${DIR}/omablock-dashboard" "${HOME}/.local/bin/omablock-dashboard"
 /usr/bin/install -m 755 "${DIR}/omablock-status" "${HOME}/.local/bin/omablock-status"
 
-echo "omablock-engine compiled successfully."
+echo "omablock-engine compiled successfully into ~/.local/bin."
 echo ""
-echo "=== Privileged Helper Installation ==="
-echo "OmaBlock requires omablock-hosts-sync and polkit policy to modify /etc/hosts without raw password prompts."
-
-HELPER_TARGET="/usr/bin/omablock-hosts-sync"
-POLICY_TARGET="/usr/share/polkit-1/actions/io.omarchy.omablock.policy"
-HELPER_SIG="OMABLOCK_HELPER_SIGNATURE = \"7f8b9e6a-omablock-hosts-sync-helper-v1\""
-POLICY_ID="io.omarchy.omablock.sync-hosts"
-
-# Ownership & Safety Check for Helper Target
-if [[ -e "${HELPER_TARGET}" || -L "${HELPER_TARGET}" ]]; then
-    if [[ -L "${HELPER_TARGET}" ]]; then
-        echo "Security Error: Target ${HELPER_TARGET} is a symlink. Aborting to prevent hijack." >&2
-        exit 1
-    fi
-    if ! grep -q "${HELPER_SIG}" "${HELPER_TARGET}" 2>/dev/null; then
-        echo "Security Conflict: A pre-existing non-OmaBlock file exists at ${HELPER_TARGET}." >&2
-        echo "Refusing to overwrite administrator or system-managed file without explicit ownership." >&2
-        exit 1
-    fi
-    echo "Verified existing OmaBlock helper at ${HELPER_TARGET}. Upgrading safely."
-fi
-
-# Ownership & Safety Check for Polkit Policy Target
-if [[ -e "${POLICY_TARGET}" || -L "${POLICY_TARGET}" ]]; then
-    if [[ -L "${POLICY_TARGET}" ]]; then
-        echo "Security Error: Target ${POLICY_TARGET} is a symlink. Aborting to prevent hijack." >&2
-        exit 1
-    fi
-    if ! grep -q "${POLICY_ID}" "${POLICY_TARGET}" 2>/dev/null; then
-        echo "Security Conflict: A pre-existing polkit policy without OmaBlock ID exists at ${POLICY_TARGET}." >&2
-        echo "Refusing to overwrite administrator or system-managed policy file." >&2
-        exit 1
-    fi
-    echo "Verified existing OmaBlock polkit policy at ${POLICY_TARGET}. Upgrading safely."
-fi
-
-echo "Installing helper and polkit policy (requires sudo privileges):"
-sudo /usr/bin/install -m 755 "${DIR}/omablock-hosts-sync" "${HELPER_TARGET}"
-sudo /usr/bin/install -m 644 "${DIR}/assets/io.omarchy.omablock.policy" "${POLICY_TARGET}"
+echo "=== Optional System-Wide Sinkhole Helper ==="
+echo "To enable system-level /etc/hosts sync and Polkit integration without password prompts,"
+echo "install the system package using Arch Linux PKGBUILD:"
+echo "    makepkg -si"
+echo ""
 
 if [[ -x /usr/bin/omarchy-restart-shell ]]; then
     echo "Reloading Omarchy shell..."

@@ -10,6 +10,7 @@ use std::fs::File;
 use std::io::Read;
 
 /// Constant-time byte array comparison to prevent side-channel timing attacks
+#[allow(dead_code)]
 pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -133,10 +134,12 @@ pub fn calculate_self_exe_sha256() -> Result<String, String> {
 }
 
 /// RAII wrapper for sensitive buffers that zeroizes memory upon drop
+#[allow(dead_code)]
 pub struct SecureBuffer {
     data: Vec<u8>,
 }
 
+#[allow(dead_code)]
 impl SecureBuffer {
     pub fn new(data: Vec<u8>) -> Self {
         Self { data }

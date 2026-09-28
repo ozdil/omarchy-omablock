@@ -1,5 +1,6 @@
 # OmaBlock - Zero-Latency AdBlocker and Privacy Shield for Omarchy Linux
 
+[![Omarchy Verified Plugin](https://img.shields.io/badge/Omarchy-Verified_Plugin-22c55e?style=for-the-badge&logo=omarchy)](https://github.com/ozdil)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-Support_Development-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/ozdil)
 
 Kernel-level ad, tracker, and telemetry sinkhole plugin engineered for Omarchy Linux.
@@ -54,7 +55,7 @@ Plugin ID: ozdil.omablock
 |   - Live latency benchmarking (<0.1ms)                  |
 |   - Background updater (curl + deduplication)           |
 +---------------------------+-----------------------------+
-                            | Sudo helper (NOPASSWD)
+                            | Polkit helper (/usr/bin)
                             v
 +---------------------------------------------------------+
 |        omablock-hosts-sync & /etc/hosts Sinkhole        |
@@ -83,15 +84,22 @@ Under the Omarchy Linux Security Standards (AGENTS.md Rule 5.3), precompiled bin
 omarchy plugin add https://github.com/ozdil/omarchy-omablock.git
 ```
 
-### Step 2: Build the Native Engine & Install Privileged Helper
-Navigate to the plugin directory and run the automated build and helper installation script:
+### Step 2: Build the Native Engine (User-Space)
+Navigate to the plugin directory and run the user-space build script:
 ```bash
 cd ~/.config/omarchy/plugins/ozdil.omablock
 ./build.sh
 ```
-This builds `omablock-engine` from source and installs `omablock-hosts-sync` and the polkit policy (`io.omarchy.omablock.policy`) so rules can be safely applied without repeated password prompts.
+This builds `omablock-engine` from source and places user executables in `~/.local/bin`.
 
-### Step 3: Add to Omarchy Shell Configuration (Optional)
+### Step 3: Install System Sinkhole Helper (Optional)
+To enable system-wide `/etc/hosts` and Polkit integration without raw password prompts, install the package via Arch package manager:
+```bash
+cd ~/.config/omarchy/plugins/ozdil.omablock
+makepkg -si
+```
+
+### Step 4: Add to Omarchy Shell Configuration (Optional)
 If not automatically added, place `ozdil.omablock` into `bar.layout.right` in `~/.config/omarchy/shell.json`:
 ```json
 {
@@ -99,7 +107,7 @@ If not automatically added, place `ozdil.omablock` into `bar.layout.right` in `~
 }
 ```
 
-### Step 4: Restart Shell
+### Step 5: Restart Shell
 ```bash
 omarchy-restart-shell
 ```
@@ -108,10 +116,11 @@ omarchy-restart-shell
 
 ## Removal & Uninstallation
 
-To cleanly remove OmaBlock, its privileged helper, polkit rules, and restore `/etc/hosts`:
+To cleanly remove OmaBlock:
 ```bash
 cd ~/.config/omarchy/plugins/ozdil.omablock
 ./uninstall.sh
+sudo pacman -R omarchy-omablock 2>/dev/null || true
 omarchy plugin remove ozdil.omablock
 ```
 
