@@ -246,10 +246,7 @@ Panel {
     }
   }
 
-  Process {
-    id: openWindowProc
-    command: ["omablock-dashboard"]
-  }
+
 
   Process {
     id: testProc
@@ -430,18 +427,6 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(8)
 
-            Button {
-              text: "Window"
-              iconText: "\uf2d0"
-              tooltipText: "Open Standalone Privacy Shield Window"
-              fontFamily: root.fontFamily
-              fontSize: Style.font.caption
-              bordered: true
-              onClicked: {
-                root.close()
-                openWindowProc.running = true
-              }
-            }
 
             ToggleSwitch {
               id: masterToggle
