@@ -83,16 +83,16 @@ Under the Omarchy Linux Security Standards (AGENTS.md Rule 5.3), precompiled bin
 omarchy plugin add https://github.com/ozdil/omarchy-omablock.git
 ```
 
-### Step 2: Build the Native Engine
-Navigate to the plugin directory and compile the engine:
+### Step 2: Build the Native Engine & Install Privileged Helper
+Navigate to the plugin directory and run the automated build and helper installation script:
 ```bash
 cd ~/.config/omarchy/plugins/ozdil.omablock
-cargo build --release --locked
-install -m 755 target/release/omablock-engine ./omablock-engine
+./build.sh
 ```
+This builds `omablock-engine` from source and installs `omablock-hosts-sync` and the polkit policy (`io.omarchy.omablock.policy`) so rules can be safely applied without repeated password prompts.
 
-### Step 3: Add to Omarchy Shell Configuration
-Add `ozdil.omablock` to `bar.layout.right` in `~/.config/omarchy/shell.json`:
+### Step 3: Add to Omarchy Shell Configuration (Optional)
+If not automatically added, place `ozdil.omablock` into `bar.layout.right` in `~/.config/omarchy/shell.json`:
 ```json
 {
   "id": "ozdil.omablock"
@@ -102,6 +102,17 @@ Add `ozdil.omablock` to `bar.layout.right` in `~/.config/omarchy/shell.json`:
 ### Step 4: Restart Shell
 ```bash
 omarchy-restart-shell
+```
+
+---
+
+## Removal & Uninstallation
+
+To cleanly remove OmaBlock, its privileged helper, polkit rules, and restore `/etc/hosts`:
+```bash
+cd ~/.config/omarchy/plugins/ozdil.omablock
+./uninstall.sh
+omarchy plugin remove ozdil.omablock
 ```
 
 ---
