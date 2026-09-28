@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# OmaBlock Official Privileged Hosts Sync Helper (ozdil.omablock)
+# OMABLOCK_HELPER_SIGNATURE = "7f8b9e6a-omablock-hosts-sync-helper-v1"
 """
 OmaBlock Hosts Sync Helper
 Safely and atomically modifies /etc/hosts to apply or remove OmaBlock sinkhole rules.
