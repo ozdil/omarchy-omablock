@@ -52,6 +52,9 @@ Panel {
 
   property string toastMsg: ""
   property bool showAboutModal: false
+  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color dim: Qt.darker(foreground, 1.45)
+  readonly property color accent: Color.accent
   readonly property string fontFamily: (root.bar && root.bar.fontFamily) ? root.bar.fontFamily : ((typeof Style !== "undefined" && Style.font && Style.font.family) ? Style.font.family : "JetBrainsMono Nerd Font, JetBrains Mono, monospace")
 
   onOpenedChanged: {
@@ -319,9 +322,9 @@ Panel {
       if (!root.systemHostsActive && root.isEnabled) {
         return Color.urgent
       } else if (!root.isEnabled) {
-        return "#f59e0b"
+        return root.dim
       } else {
-        return root.bar ? root.bar.foreground : Color.foreground
+        return root.foreground
       }
     }
     tooltipText: !root.isEnabled
@@ -338,18 +341,43 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
+    focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(500))
     contentHeight: panel.fittedContentHeight(panelColumn.implicitHeight + Style.space(24), Style.space(840))
 
-    ScrollView {
-      id: scrollArea
+    PanelKeyCatcher {
+      id: keyCatcher
       anchors.fill: parent
-      clip: true
-      ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-      ScrollBar.vertical.policy: panelColumn.implicitHeight > height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+      onCloseRequested: {
+        if (root.showAboutModal) {
+          root.showAboutModal = false
+        } else {
+          root.close()
+        }
+      }
+      onTabRequested: function(direction) { root.switchPanel(direction) }
+      onActivateRequested: root.toggleMaster()
+      onTextKey: function(t) {
+        if (t === "r" || t === "R") {
+          root.refresh()
+        } else if (t === "t" || t === "T") {
+          root.runLiveTest()
+        } else if (t === "a" || t === "A") {
+          root.showAboutModal = !root.showAboutModal
+        } else if (t === "u" || t === "U") {
+          root.updateRules()
+        }
+      }
 
-      Column {
-        id: panelColumn
+      ScrollView {
+        id: scrollArea
+        anchors.fill: parent
+        clip: true
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        ScrollBar.vertical.policy: panelColumn.implicitHeight > height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+
+        Column {
+          id: panelColumn
         width: scrollArea.availableWidth
         spacing: Style.space(12)
 
@@ -482,8 +510,8 @@ Panel {
           width: parent.width
           visible: root.pauseRemainingSecs > 0
           radius: Style.cornerRadius
-          color: Style.controlFill(false, false, Color.foreground, "#f59e0b")
-          borderSpec: Border.controlSpec("focus", Color.foreground, "#f59e0b")
+          color: Style.controlFill(false, false, Color.foreground, Color.accent)
+          borderSpec: Border.controlSpec("focus", Color.foreground, Color.accent)
           implicitHeight: Style.space(42)
 
           RowLayout {
@@ -497,7 +525,7 @@ Panel {
               text: ""
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
-              color: "#f59e0b"
+              color: root.dim
             }
 
             Text {
@@ -1502,7 +1530,7 @@ Panel {
             text: "󰟀"
             font.family: root.fontFamily
             font.pixelSize: Style.font.icon
-            color: (root.kernelEnforcement && root.kernelActive) ? Color.accent : (root.kernelEnforcement ? "#f59e0b" : Color.muted)
+            color: (root.kernelEnforcement && root.kernelActive) ? Color.accent : (root.kernelEnforcement ? root.dim : Color.muted)
           }
 
           ToggleSwitch {
@@ -1826,6 +1854,7 @@ Panel {
           onClicked: Qt.openUrlExternally("https://buymeacoffee.com/ozdil")
         }
       }
+    }
     }
   }
 }

@@ -3,11 +3,9 @@ mod kernel;
 mod secure_fs;
 mod self_defense;
 mod subproc;
-mod validation;
 
 pub use ai::{AiClassification, AiRiskAssessment, DgaClassifier};
 pub use kernel::{KernelFilterStatus, KernelNetfilter};
-pub use validation::validate_domain;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -373,6 +371,62 @@ pub struct StatusOutput {
     pub idn_homograph_detected: bool,
 }
 
+/// Validates that a string is a legitimate RFC 1035 domain name without shell/hosts injection
+pub fn validate_domain(raw: &str) -> Result<String, String> {
+    let s = raw.trim().trim_end_matches('.').to_lowercase();
+    if s.is_empty() {
+        return Err("Domain cannot be empty".to_string());
+    }
+    if s.len() > 253 {
+        return Err("Domain exceeds maximum length of 253 characters".to_string());
+    }
+
+    let labels: Vec<&str> = s.split('.').collect();
+    if labels.len() < 2 {
+        return Err("Domain must contain at least one dot separating label and TLD".to_string());
+    }
+
+    let last_label = labels[labels.len() - 1];
+    if matches!(last_label, "local" | "localhost" | "lan" | "internal" | "arpa" | "test" | "invalid") {
+        return Err(format!("Domain belongs to reserved local/internal TLD: .{}", last_label));
+    }
+
+    let reserved_names = [
+        "localhost",
+        "broadcasthost",
+        "local",
+        "ip6-localhost",
+        "ip6-loopback",
+        "ip6-allnodes",
+        "ip6-allrouters",
+        "ip6-allhosts",
+        "0.0.0.0",
+        "255.255.255.255",
+    ];
+    if reserved_names.contains(&s.as_str()) {
+        return Err(format!("Domain is a reserved system hostname: {}", s));
+    }
+
+    for label in &labels {
+        if label.is_empty() {
+            return Err("Domain contains empty label (e.g. consecutive dots)".to_string());
+        }
+        if label.len() > 63 {
+            return Err("Domain label exceeds 63 characters".to_string());
+        }
+        if label.starts_with('-') || label.ends_with('-') {
+            return Err("Domain label cannot start or end with a hyphen".to_string());
+        }
+        for ch in label.chars() {
+            if !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_' {
+                return Err(format!("Domain contains invalid character: '{}'", ch));
+            }
+        }
+    }
+
+    Ok(s)
+}
+
 /// Generates a local timestamp string in pure Rust using POSIX localtime_r
 pub fn get_current_timestamp() -> String {
     #[cfg(unix)]
@@ -422,49 +476,10 @@ fn check_pause_expiry(cfg: &mut OmaBlockConfig, rules: &ParsedRules) -> bool {
     false
 }
 
-fn get_user_home_dir() -> PathBuf {
-    if let Ok(home) = std::env::var("HOME") {
-        if !home.trim().is_empty() {
-            return PathBuf::from(home);
-        }
-    }
-    #[cfg(unix)]
-    {
-        // SAFETY: getpwuid_r is POSIX-compliant thread-safe user lookup
-        let uid = unsafe { libc::getuid() };
-        let mut pwd = std::mem::MaybeUninit::<libc::passwd>::uninit();
-        let mut buf = vec![0u8; 4096];
-        let mut result = std::ptr::null_mut();
-        let ret = unsafe {
-            libc::getpwuid_r(
-                uid,
-                pwd.as_mut_ptr(),
-                buf.as_mut_ptr() as *mut libc::c_char,
-                buf.len(),
-                &mut result,
-            )
-        };
-        if ret == 0 && !result.is_null() {
-            let pwd_ref = unsafe { &*result };
-            if !pwd_ref.pw_dir.is_null() {
-                let c_str = unsafe { std::ffi::CStr::from_ptr(pwd_ref.pw_dir) };
-                if let Ok(s) = c_str.to_str() {
-                    if !s.is_empty() {
-                        return PathBuf::from(s);
-                    }
-                }
-            }
-        }
-    }
-    PathBuf::from("/tmp")
-}
-
 fn get_state_dir() -> PathBuf {
-    let home = get_user_home_dir();
-    let dir = home.join(".local/state/omarchy/omablock");
-    if let Err(e) = secure_fs::ensure_state_dir(&dir) {
-        eprintln!("Warning: Failed to ensure secure state directory {:?}: {}", dir, e);
-    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/ozdil".to_string());
+    let dir = PathBuf::from(home).join(".local/state/omarchy/omablock");
+    let _ = secure_fs::ensure_state_dir(&dir);
     dir
 }
 
@@ -520,13 +535,11 @@ fn get_gui_env_pairs() -> Vec<(&'static str, String)> {
     pairs
 }
 
-fn get_sync_bin_path() -> Option<&'static str> {
-    if std::path::Path::new("/usr/local/bin/omablock-hosts-sync").exists() {
-        Some("/usr/local/bin/omablock-hosts-sync")
-    } else if std::path::Path::new("/usr/bin/omablock-hosts-sync").exists() {
-        Some("/usr/bin/omablock-hosts-sync")
+fn get_sync_bin_path() -> &'static str {
+    if std::path::Path::new("/usr/bin/omablock-hosts-sync").exists() {
+        "/usr/bin/omablock-hosts-sync"
     } else {
-        None
+        "/usr/local/bin/omablock-hosts-sync"
     }
 }
 
@@ -534,13 +547,34 @@ fn send_notification(summary: &str, body: &str) {
     let pairs = get_gui_env_pairs();
     let extra_envs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let deadline = Instant::now() + Duration::from_millis(1500);
-    let _ = subproc::run_cmd_bounded(
-        "notify-send",
-        &["-a", "OmaBlock", "--", summary, body],
+
+    let glyph = "󰕓";
+    let status = subproc::run_cmd_bounded(
+        "omarchy-notification-send",
+        &[
+            "--app-name",
+            "OmaBlock",
+            "-g",
+            glyph,
+            "-u",
+            "normal",
+            summary,
+            body,
+        ],
         &extra_envs,
         deadline,
         4096,
     );
+
+    if status.is_none() {
+        let _ = subproc::run_cmd_bounded(
+            "notify-send",
+            &["-a", "OmaBlock", "-i", "dialog-information", "--", summary, body],
+            &extra_envs,
+            deadline,
+            4096,
+        );
+    }
 }
 
 fn flush_dns_cache() {
@@ -645,19 +679,7 @@ pub fn is_system_hosts_active_from_reader<R: BufRead>(reader: R) -> bool {
 }
 
 fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
-    let sync_bin = match get_sync_bin_path() {
-        Some(bin) => bin,
-        None => {
-            eprintln!("Notice: omablock-hosts-sync helper is not installed in system path (/usr/bin/omablock-hosts-sync).");
-            if cfg.enabled {
-                send_notification(
-                    "OmaBlock Helper Required",
-                    "To enable system-wide adblocking, install the package via 'makepkg -si' or pacman.",
-                );
-            }
-            return 0;
-        }
-    };
+    let sync_bin = get_sync_bin_path();
     let pairs = get_gui_env_pairs();
     let gui_envs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
@@ -1036,8 +1058,8 @@ fn main() {
             }
         });
 
-        // Determine if IDN homograph detection was ever triggered
-        let idn_detected = get_state_dir().join("idn_detected.state").exists();
+        // Determine if IDN homograph detection was ever triggered (for demo, just query a file or set false)
+        let idn_detected = std::path::Path::new("/tmp/omablock_idn_detected.state").exists();
 
         let output = StatusOutput {
             enabled: cfg.enabled,
