@@ -229,8 +229,8 @@ Panel {
           root.aiProtection = !!d.ai_protection
           root.kernelEnforcement = !!d.kernel_enforcement
           if (d.kernel_status) {
-            root.kernelActive = !!d.kernel_status.active
-            root.kernelRuleCount = d.kernel_status.rule_count || 0
+            root.kernelActive = !!(d.kernel_status.is_active || d.kernel_status.active)
+            root.kernelRuleCount = d.kernel_status.active_rule_count || d.kernel_status.rule_count || 0
           }
 
           if (d.last_test) {

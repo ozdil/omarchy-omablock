@@ -670,12 +670,22 @@ fn is_system_hosts_active() -> bool {
 }
 
 pub fn is_system_hosts_active_from_reader<R: BufRead>(reader: R) -> bool {
+    let mut inside_block = false;
+    let mut rule_count = 0;
     for line in reader.lines().map_while(Result::ok) {
-        if line.contains("# --- BEGIN OMABLOCK MANAGED RULES ---") {
-            return true;
+        let trimmed = line.trim();
+        if trimmed.contains("# --- BEGIN OMABLOCK MANAGED RULES ---") {
+            inside_block = true;
+            continue;
+        }
+        if trimmed.contains("# --- END OMABLOCK MANAGED RULES ---") {
+            break;
+        }
+        if inside_block && !trimmed.is_empty() && !trimmed.starts_with('#') {
+            rule_count += 1;
         }
     }
-    false
+    inside_block && rule_count > 0
 }
 
 fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
@@ -832,9 +842,8 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
     }
 }
 
-fn run_verification_test(cfg: &mut OmaBlockConfig, rules: &ParsedRules) -> TestSummary {
+fn run_verification_test(cfg: &mut OmaBlockConfig, _rules: &ParsedRules) -> TestSummary {
     if cfg.enabled {
-        let _ = sync_system_hosts(cfg, rules);
         flush_dns_cache();
     }
 
@@ -1058,8 +1067,8 @@ fn main() {
             }
         });
 
-        // Determine if IDN homograph detection was ever triggered (for demo, just query a file or set false)
-        let idn_detected = std::path::Path::new("/tmp/omablock_idn_detected.state").exists();
+        // Determine if IDN homograph detection was ever triggered
+        let idn_detected = get_state_dir().join("idn_detected.state").exists();
 
         let output = StatusOutput {
             enabled: cfg.enabled,
@@ -1568,6 +1577,9 @@ mod tests {
     fn test_is_system_hosts_active_reader() {
         let inactive = "127.0.0.1 localhost\n::1 localhost\n";
         assert!(!is_system_hosts_active_from_reader(inactive.as_bytes()));
+
+        let empty_block = "127.0.0.1 localhost\n# --- BEGIN OMABLOCK MANAGED RULES ---\n# --- END OMABLOCK MANAGED RULES ---\n";
+        assert!(!is_system_hosts_active_from_reader(empty_block.as_bytes()));
 
         let active = "127.0.0.1 localhost\n# --- BEGIN OMABLOCK MANAGED RULES ---\n0.0.0.0 ad.com\n# --- END OMABLOCK MANAGED RULES ---\n";
         assert!(is_system_hosts_active_from_reader(active.as_bytes()));
