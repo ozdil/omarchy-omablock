@@ -1817,7 +1817,7 @@ Panel {
         }
 
         Text {
-          text: "Version: 1.1.0\nDeveloper: Ozan Ozdil (@ozdil)\nLicense: MIT\nKernel-Level Zero-Latency Ad & Tracker Blocker"
+          text: "Version: 1.3.0\nDeveloper: Ozan Ozdil (@ozdil)\nLicense: MIT\nKernel-Level Zero-Latency Ad & Tracker Blocker"
           color: root.bar ? root.bar.foreground : Color.foreground
           opacity: 0.7
           font.family: root.fontFamily
