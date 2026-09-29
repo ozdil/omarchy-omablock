@@ -2,11 +2,13 @@
   "schemaVersion": 1,
   "id": "ozdil.omablock",
   "name": "OmaBlock",
-  "version": "1.0.0",
-  "author": "Ozan Özdil (ozdil)",
+  "version": "1.1.0",
+  "author": "Ozan \u00d6zdil (ozdil)",
   "license": "MIT",
   "description": "Machine-Age Zero-Latency AdBlocker & Privacy Shield for Omarchy Linux.",
-  "kinds": ["bar-widget"],
+  "kinds": [
+    "bar-widget"
+  ],
   "activation": "on-demand",
   "entryPoints": {
     "barWidget": "Panel.qml"
@@ -16,7 +18,14 @@
     "description": "System-wide zero-latency ad and tracker shield.",
     "category": "Privacy",
     "defaultSection": "right",
-    "aliases": ["omablock", "adblock", "adblocker", "shield", "privacy", "blocker"],
+    "aliases": [
+      "omablock",
+      "adblock",
+      "adblocker",
+      "shield",
+      "privacy",
+      "blocker"
+    ],
     "allowMultiple": false
   },
   "verified": true
