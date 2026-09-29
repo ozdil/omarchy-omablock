@@ -521,7 +521,9 @@ fn get_gui_env_pairs() -> Vec<(&'static str, String)> {
 }
 
 fn get_sync_bin_path() -> Option<&'static str> {
-    if std::path::Path::new("/usr/bin/omablock-hosts-sync").exists() {
+    if std::path::Path::new("/usr/local/bin/omablock-hosts-sync").exists() {
+        Some("/usr/local/bin/omablock-hosts-sync")
+    } else if std::path::Path::new("/usr/bin/omablock-hosts-sync").exists() {
         Some("/usr/bin/omablock-hosts-sync")
     } else {
         None

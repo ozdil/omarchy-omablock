@@ -51,6 +51,7 @@ Panel {
   property real testLatency: 0.0
 
   property string toastMsg: ""
+  property bool showAboutModal: false
   readonly property string fontFamily: (root.bar && root.bar.fontFamily) ? root.bar.fontFamily : ((typeof Style !== "undefined" && Style.font && Style.font.family) ? Style.font.family : "JetBrainsMono Nerd Font, JetBrains Mono, monospace")
 
   onOpenedChanged: {
@@ -427,6 +428,12 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(8)
 
+            Button {
+              iconText: "󰋽"
+              tooltipText: "About & Imprint"
+              bordered: true
+              onClicked: root.showAboutModal = !root.showAboutModal
+            }
 
             ToggleSwitch {
               id: masterToggle
@@ -1733,6 +1740,90 @@ Panel {
           width: parent.width
           height: Style.space(20)
           implicitHeight: Style.space(20)
+        }
+      }
+    }
+
+    // About & Imprint Modal Overlay
+    Rectangle {
+      id: aboutOverlay
+      anchors.fill: parent
+      visible: root.showAboutModal
+      color: Qt.rgba(0.05, 0.05, 0.07, 0.96)
+      z: 99
+
+      MouseArea {
+        anchors.fill: parent
+        // Block underlying clicks
+      }
+
+      Column {
+        anchors.centerIn: parent
+        width: parent.width - Style.space(40)
+        spacing: Style.space(12)
+
+        Row {
+          width: parent.width
+          Item {
+            width: parent.width - closeAboutBtn.implicitWidth
+            implicitHeight: aboutTitleText.implicitHeight
+            Text {
+              id: aboutTitleText
+              text: "OmaBlock"
+              color: root.bar ? root.bar.foreground : Color.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.title
+              font.bold: true
+            }
+          }
+
+          Button {
+            id: closeAboutBtn
+            text: "✕"
+            bordered: true
+            foreground: root.bar ? root.bar.foreground : Color.foreground
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            onClicked: root.showAboutModal = false
+          }
+        }
+
+        Text {
+          text: "Version: 1.1.0\nDeveloper: Ozan Ozdil (@ozdil)\nLicense: MIT\nKernel-Level Zero-Latency Ad & Tracker Blocker"
+          color: root.bar ? root.bar.foreground : Color.foreground
+          opacity: 0.7
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          lineHeight: 1.3
+        }
+
+        PanelSeparator {
+          width: parent.width
+          foreground: root.bar ? root.bar.foreground : Color.foreground
+        }
+
+        Button {
+          width: parent.width
+          text: "GitHub / Contact"
+          iconText: "󰊤"
+          bordered: true
+          foreground: root.bar ? root.bar.foreground : Color.foreground
+          accent: Color.accent
+          fontFamily: root.fontFamily
+          fontSize: Style.font.caption
+          onClicked: Qt.openUrlExternally("https://github.com/ozdil")
+        }
+
+        Button {
+          width: parent.width
+          text: "Buy Me a Coffee"
+          iconText: "󰅖"
+          bordered: true
+          foreground: "#000000"
+          color: "#FFDD00"
+          fontFamily: root.fontFamily
+          fontSize: Style.font.caption
+          onClicked: Qt.openUrlExternally("https://buymeacoffee.com/ozdil")
         }
       }
     }
