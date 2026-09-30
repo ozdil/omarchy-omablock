@@ -39,8 +39,28 @@ MANIFEST_FILE="${STATE_DIR}/install_manifest.json"
 # Binaries to install
 TARGET_BINARIES=("omablock-engine" "omablock" "omablock-dashboard" "omablock-status")
 
+get_manifest_hash() {
+    local target="$1"
+    /usr/bin/python3 -c '
+import json, sys
+target = sys.argv[1]
+manifest_path = sys.argv[2]
+try:
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        files = data.get("files", {})
+        if target in files:
+            print(files[target])
+            sys.exit(0)
+        else:
+            sys.exit(2)
+except Exception:
+    sys.exit(3)
+' "${target}" "${MANIFEST_FILE}"
+}
+
 # Pre-installation ownership verification:
-# Refuse to overwrite foreign files or symlinks not tracked by OmaBlock's manifest.
+# Refuse to overwrite foreign files, symlinks, or tampered files not matching OmaBlock's manifest.
 for bin_name in "${TARGET_BINARIES[@]}"; do
     target_path="${HOME}/.local/bin/${bin_name}"
     if [[ -e "${target_path}" || -L "${target_path}" ]]; then
@@ -48,11 +68,34 @@ for bin_name in "${TARGET_BINARIES[@]}"; do
             echo "Security Error: Target ${target_path} is a symlink. Refusing to overwrite foreign or symlinked file." >&2
             exit 1
         fi
-        # If file exists, verify ownership via manifest
+
+        if [[ ! -f "${target_path}" ]]; then
+            echo "Security Error: Target ${target_path} is not a regular file." >&2
+            exit 1
+        fi
+
+        # If file exists, verify ownership and integrity via manifest
         if [[ -f "${MANIFEST_FILE}" ]]; then
-            if ! grep -F -q "\"${target_path}\"" "${MANIFEST_FILE}" 2>/dev/null; then
+            recorded_hash=""
+            manifest_status=0
+            recorded_hash=$(get_manifest_hash "${target_path}") || manifest_status=$?
+
+            if [[ ${manifest_status} -eq 3 ]]; then
+                echo "Security Error: Installation manifest at ${MANIFEST_FILE} is corrupt or unreadable." >&2
+                exit 1
+            elif [[ ${manifest_status} -eq 2 || -z "${recorded_hash}" ]]; then
                 echo "Security Conflict: A pre-existing non-OmaBlock file exists at ${target_path}." >&2
                 echo "Refusing to overwrite foreign user-managed executable." >&2
+                exit 1
+            elif [[ ${manifest_status} -ne 0 ]]; then
+                echo "Security Error: Failed to query installation manifest." >&2
+                exit 1
+            fi
+
+            current_hash=$(/usr/bin/sha256sum "${target_path}" 2>/dev/null | /usr/bin/awk '{print $1}')
+            if [[ -z "${current_hash}" || "${current_hash}" != "${recorded_hash}" ]]; then
+                echo "Security Conflict: File ${target_path} hash does not match installation manifest." >&2
+                echo "Refusing to overwrite modified or untracked file." >&2
                 exit 1
             fi
         else

@@ -135,6 +135,73 @@ class TestInstallerManifest(unittest.TestCase):
         with open(unrelated_file, "r") as f:
             self.assertEqual(f.read(), "echo 'keep me'")
 
+    def test_tampered_file_hash_mismatch(self):
+        # Create manifest with an expected hash for omablock-dashboard
+        manifest = os.path.join(self.state_dir, "install_manifest.json")
+        target_bin = os.path.join(self.bin_dir, "omablock-dashboard")
+        with open(manifest, "w") as f:
+            f.write(f'{{"files": {{"{target_bin}": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}}}\n')
+
+        with open(target_bin, "w") as f:
+            f.write("MODIFIED_OR_TAMPERED_CONTENT")
+
+        # Running build.sh MUST fail due to hash mismatch
+        proc = subprocess.run(
+            ["/bin/bash", "-p", os.path.join(self.repo_dir, "build.sh")],
+            env=self.env,
+            cwd=self.repo_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 1, "build.sh must exit 1 when target file hash does not match manifest")
+        self.assertIn("Security Conflict", proc.stderr)
+        self.assertIn("hash does not match", proc.stderr)
+        with open(target_bin, "r") as f:
+            self.assertEqual(f.read(), "MODIFIED_OR_TAMPERED_CONTENT")
+
+    def test_corrupt_manifest_refusal(self):
+        # Create an invalid JSON manifest
+        manifest = os.path.join(self.state_dir, "install_manifest.json")
+        target_bin = os.path.join(self.bin_dir, "omablock-dashboard")
+        with open(manifest, "w") as f:
+            f.write("{ INVALID_JSON_CONTENT ")
+
+        with open(target_bin, "w") as f:
+            f.write("VALID_BINARY")
+
+        # Running build.sh MUST fail due to corrupt manifest
+        proc = subprocess.run(
+            ["/bin/bash", "-p", os.path.join(self.repo_dir, "build.sh")],
+            env=self.env,
+            cwd=self.repo_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 1, "build.sh must exit 1 when manifest is corrupt")
+        self.assertIn("Security Error", proc.stderr)
+        self.assertIn("corrupt or unreadable", proc.stderr)
+
+    def test_non_regular_file_refusal(self):
+        # Create a directory where a binary is expected
+        target_bin = os.path.join(self.bin_dir, "omablock-status")
+        os.makedirs(target_bin, exist_ok=True)
+
+        # Running build.sh MUST fail when target is not a regular file
+        proc = subprocess.run(
+            ["/bin/bash", "-p", os.path.join(self.repo_dir, "build.sh")],
+            env=self.env,
+            cwd=self.repo_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 1, "build.sh must exit 1 when target is not a regular file")
+        self.assertIn("Security Error", proc.stderr)
+        self.assertIn("not a regular file", proc.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
+
