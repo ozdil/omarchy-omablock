@@ -65,7 +65,7 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
 
     def test_browser_doh_policy_preservation(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            policy_file = os.path.join(tmpdir, "omablock_doh.json")
+            policy_file = os.path.join(tmpdir, "omablock_policies.json")
             
             # 1. Unmanaged foreign policy
             with open(policy_file, "w") as f:
@@ -81,7 +81,7 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
 
             # 2. Managed policy can be removed safely
             with open(policy_file, "w") as f:
-                f.write('{"_omablock_managed": true, "DnsOverHttpsMode": "off"}\n')
+                f.write('{"_omablock_managed": true, "DnsOverHttpsMode": "off", "QuicAllowed": false}\n')
             omablock_sync.clear_browser_doh_policy()
             self.assertFalse(os.path.exists(policy_file))
 

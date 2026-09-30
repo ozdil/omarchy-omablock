@@ -39,9 +39,12 @@ POLICY_DIRS = [
     "/etc/brave/policies/managed",
     "/etc/edge/policies/managed",
 ]
-POLICY_FILENAME = "omablock_doh.json"
+POLICY_FILENAME = "omablock_policies.json"
 POLICY_MARKER = '"_omablock_managed": true'
-POLICY_CONTENT = '{"_omablock_managed": true, "DnsOverHttpsMode": "off"}\n'
+POLICY_CONTENT = (
+    '{"_omablock_managed": true, "DnsOverHttpsMode": "off", "QuicAllowed": false, '
+    '"ExtensionInstallForcelist": ["cjpalhdlnbpafiamejdnhcphjbkeiagm;https://clients2.google.com/service/update2/crx"]}\n'
+)
 
 DOH_DOMAINS = {
     "use-application-dns.net",
