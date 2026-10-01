@@ -1,23 +1,8 @@
-/* OmaBlock Universal Cosmetic Filtering Rules */
-/* Zero-FOUC declarative element blocking for popular ad & tracker containers */
+/* OmaBlock Precision Cosmetic Filtering Rules */
+/* Zero-FOUC element blocking for verified ad & tracker containers */
+/* Safe against critical UI components (YouTube masthead, news tickers, carousels) */
 
-/* DonanimHaber first-party and dynamic ad containers */
-[id^="rotator"],
-.rotator,
-.ekoge,
-.dha-counter,
-a[href*="ad.donanimhaber.com"],
-a[href*="adserve.donanimhaber.com"],
-img[src*="adserve.donanimhaber.com"],
-div[class*="masthead"],
-div[class*="reklam"],
-div[id*="reklam"],
-.reklam-alani,
-.teksatir,
-
-/* Haberler.com & Genel Türk Haber Siteleri */
-#sticky-ad-container,
-.ana_masthead_1056x250,
+/* Global Standard Advertising Containers (No legitimate site uses these for main UI) */
 div[id*="google_ads"],
 div[id^="div-gpt-ad"],
 div[class*="dfp-ad"],
@@ -34,14 +19,14 @@ iframe[id*="google_ads_iframe"],
 [data-ad-unit],
 [data-ad-client],
 
-/* Aggressive Pop-up & Floating Interstitials */
+/* Aggressive Pop-up & Floating Interstitials (Strictly isolated to advertising overlays) */
 .popup-ad,
 .ad-overlay,
 .modal-advertisement,
 .floating-banner,
 #interstitial-ad,
-div[id*="interstitial"],
-div[class*="interstitial"] {
+div[id*="interstitial-ad"],
+div[class*="interstitial-ad"] {
   display: none !important;
   visibility: hidden !important;
   height: 0 !important;
@@ -54,4 +39,29 @@ div[class*="interstitial"] {
   margin: 0 !important;
   padding: 0 !important;
   border: none !important;
+}
+
+/* Site-Specific Rules: DonanimHaber First-Party Ads */
+/* Target only verified ad anchors, dynamic adservers and explicit ad containers */
+a[href*="ad.donanimhaber.com"],
+a[href*="adserve.donanimhaber.com"],
+img[src*="adserve.donanimhaber.com"],
+div#rotator0,
+div#rotator1,
+div#rotator2,
+div#rotator3,
+div.reklam-alani,
+div[id^="dha-counter"] {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Site-Specific Rules: Haberler.com & Turkish News Portals */
+#sticky-ad-container,
+.ana_masthead_1056x250 {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
 }
