@@ -3,9 +3,9 @@
   "id": "ozdil.omablock",
   "name": "OmaBlock",
   "version": "1.4.0",
-  "author": "Ozan \u00d6zdil (ozdil)",
+  "author": "Ozan Özdil (ozdil)",
   "license": "MIT",
-  "description": "Machine-Age Zero-Latency AdBlocker & Privacy Shield for Omarchy Linux.",
+  "description": "Zero-latency system-wide adblocker, DNS/hosts privacy shield, and OmaBlock Shield Bridge for Chromium on Omarchy Linux.",
   "kinds": [
     "bar-widget"
   ],
@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "OmaBlock",
-    "description": "System-wide zero-latency ad and tracker shield.",
+    "description": "System-wide zero-latency ad and tracker shield with Chromium Bridge.",
     "category": "Privacy",
     "defaultSection": "right",
     "aliases": [

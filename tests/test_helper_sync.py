@@ -157,6 +157,49 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 omablock_sync.clear_rules()
 
+    def test_read_hosts_file_size_limit_exceeded(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_hosts = os.path.join(tmpdir, "hosts")
+            with open(mock_hosts, "w") as f:
+                f.write("127.0.0.1 localhost\n")
+
+            saved_limit = omablock_sync.MAX_HOSTS_SIZE
+            try:
+                omablock_sync.MAX_HOSTS_SIZE = 5  # smaller than file content
+                with self.assertRaises(SystemExit):
+                    omablock_sync.read_hosts_file(mock_hosts)
+            finally:
+                omablock_sync.MAX_HOSTS_SIZE = saved_limit
+
+    def test_read_hosts_file_truncation_detection(self):
+        from unittest.mock import patch, MagicMock
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_hosts = os.path.join(tmpdir, "hosts")
+            with open(mock_hosts, "w") as f:
+                f.write("127.0.0.1 localhost\n")
+
+            mock_stat = MagicMock()
+            mock_stat.st_mode = 0o100644  # regular file
+            mock_stat.st_size = 10  # within MAX_HOSTS_SIZE
+
+            # Simulate f.read(MAX_HOSTS_SIZE) returning 10 chars, then f.read(1) returning leftover char
+            mock_file = MagicMock()
+            mock_file.read.side_effect = ["1234567890", "X"]
+
+            with patch("os.fstat", return_value=mock_stat), \
+                 patch("builtins.open", return_value=mock_file):
+                with self.assertRaises(SystemExit):
+                    omablock_sync.read_hosts_file(mock_hosts)
+
+    def test_read_hosts_file_non_regular_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # directory instead of regular file
+            sub_dir = os.path.join(tmpdir, "sub_dir")
+            os.mkdir(sub_dir)
+            with self.assertRaises(SystemExit):
+                omablock_sync.read_hosts_file(sub_dir)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,11 +15,49 @@ import os
 import re
 import sys
 import shutil
+import stat
 import subprocess
 
 HOSTS_PATH = "/etc/hosts"
 BACKUP_PATH = "/etc/hosts.omablock.bak"
 TEMP_PATH = "/etc/hosts.omablock.tmp"
+MAX_HOSTS_SIZE = 128 * 1024 * 1024  # 128 MiB
+
+
+def read_hosts_file(path: str = HOSTS_PATH) -> str:
+    """Safely reads a hosts file strictly avoiding symlinks and size/truncation violations.
+    Exits with code 1 immediately on any security or reading error."""
+    if not os.path.lexists(path):
+        return ""
+
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags)
+    except Exception as e:
+        print(f"Fatal error: Could not open {path} (symlink or unreadable): {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            print(f"Fatal error: {path} is not a regular file.", file=sys.stderr)
+            sys.exit(1)
+        if st.st_size > MAX_HOSTS_SIZE:
+            print(f"Fatal error: {path} exceeds maximum allowed size ({MAX_HOSTS_SIZE} bytes).", file=sys.stderr)
+            sys.exit(1)
+
+        with open(fd, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read(MAX_HOSTS_SIZE)
+            leftover = f.read(1)
+            if leftover:
+                print(f"Fatal error: {path} truncated or modified during read (exceeds {MAX_HOSTS_SIZE} bytes).", file=sys.stderr)
+                sys.exit(1)
+            return content
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"Fatal error: Could not read {path}: {e}", file=sys.stderr)
+        sys.exit(1)
 
 BEGIN_MARKER = "# --- BEGIN OMABLOCK MANAGED RULES ---"
 END_MARKER = "# --- END OMABLOCK MANAGED RULES ---"
@@ -182,15 +220,9 @@ def ensure_backup():
 
     if not os.path.lexists(HOSTS_PATH):
         return
-    if os.path.islink(HOSTS_PATH) or not os.path.isfile(HOSTS_PATH):
-        print(f"Fatal error: {HOSTS_PATH} is a symlink or not a regular file. Aborting backup.", file=sys.stderr)
-        sys.exit(1)
 
+    content = read_hosts_file(HOSTS_PATH)
     try:
-        flags_r = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-        fd_r = os.open(HOSTS_PATH, flags_r)
-        with open(fd_r, "r", encoding="utf-8", errors="ignore") as src:
-            content = src.read(32 * 1024 * 1024)
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(BACKUP_PATH, flags, 0o644)
         with open(fd, "w", encoding="utf-8") as dst:
@@ -288,19 +320,7 @@ def apply_rules(rules_file: str):
         sys.exit(1)
 
     # Read current hosts
-    content = ""
-    if os.path.lexists(HOSTS_PATH):
-        if os.path.islink(HOSTS_PATH) or not os.path.isfile(HOSTS_PATH):
-            print(f"Fatal error: {HOSTS_PATH} is a symlink or not a regular file. Aborting.", file=sys.stderr)
-            sys.exit(1)
-        try:
-            flags_r = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-            fd_r = os.open(HOSTS_PATH, flags_r)
-            with open(fd_r, "r", encoding="utf-8") as f:
-                content = f.read(32 * 1024 * 1024)
-        except Exception as e:
-            print(f"Fatal error: Could not read {HOSTS_PATH} completely: {e}. Aborting to prevent data loss.", file=sys.stderr)
-            sys.exit(1)
+    content = read_hosts_file(HOSTS_PATH)
 
     ensure_backup()
     clean_hosts = strip_omablock_block(content)
@@ -402,19 +422,8 @@ def clear_rules():
     clear_nftables_rules()
     if not os.path.lexists(HOSTS_PATH):
         return
-    if os.path.islink(HOSTS_PATH) or not os.path.isfile(HOSTS_PATH):
-        print(f"Fatal error: {HOSTS_PATH} is a symlink or not a regular file. Aborting.", file=sys.stderr)
-        sys.exit(1)
 
-    content = ""
-    try:
-        flags_r = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-        fd_r = os.open(HOSTS_PATH, flags_r)
-        with open(fd_r, "r", encoding="utf-8") as f:
-            content = f.read(32 * 1024 * 1024)
-    except Exception as e:
-        print(f"Fatal error: Could not read {HOSTS_PATH} completely: {e}. Aborting to prevent data loss.", file=sys.stderr)
-        sys.exit(1)
+    content = read_hosts_file(HOSTS_PATH)
 
     if BEGIN_MARKER not in content:
         flush_dns_cache()
