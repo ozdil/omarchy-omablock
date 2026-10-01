@@ -843,10 +843,6 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
 }
 
 fn run_verification_test(cfg: &mut OmaBlockConfig, _rules: &ParsedRules) -> TestSummary {
-    if cfg.enabled {
-        flush_dns_cache();
-    }
-
     let test_domains = vec![
         ("doubleclick.net", cfg.categories.ads),
         ("pagead2.googlesyndication.com", cfg.categories.ads),
@@ -1260,13 +1256,19 @@ fn main() {
             }
         }
         "--startup" => {
+            println!("OmaBlock startup health check and optimization starting...");
+            if cfg.enabled {
+                let synced = sync_system_hosts(&cfg, &rules);
+                println!("System hosts shield verified and synced ({} rules active).", synced);
+            }
             if cfg.auto_update {
                 println!("Auto-update on startup is active. Fetching latest rules...");
                 let ok = update_blocklists_online(&mut cfg, &mut rules);
                 println!("Startup update finished. Success: {}", ok);
             } else {
-                println!("Auto-update on startup is disabled. Skipping.");
+                println!("Auto-update on startup is disabled. Skipping remote fetch.");
             }
+            println!("OmaBlock startup optimization completed successfully.");
         }
         "--pause" => {
             let mins: u64 = if args.len() > 2 {

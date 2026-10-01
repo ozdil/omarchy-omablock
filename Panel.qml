@@ -348,6 +348,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      blocked: domainInput.activeFocus
       onCloseRequested: {
         if (root.showAboutModal) {
           root.showAboutModal = false
@@ -361,11 +362,11 @@ Panel {
         if (t === "r" || t === "R") {
           root.refresh()
         } else if (t === "t" || t === "T") {
-          root.runLiveTest()
+          root.runTest()
         } else if (t === "a" || t === "A") {
           root.showAboutModal = !root.showAboutModal
         } else if (t === "u" || t === "U") {
-          root.updateRules()
+          root.updateBlocklists()
         }
       }
 
@@ -401,7 +402,7 @@ Panel {
             id: heroLabels
             anchors.left: heroIcon.right
             anchors.leftMargin: Style.space(14)
-            anchors.right: masterToggle.left
+            anchors.right: heroActions.left
             anchors.rightMargin: Style.space(12)
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(3)
@@ -452,6 +453,7 @@ Panel {
           }
 
           Row {
+            id: heroActions
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(8)
