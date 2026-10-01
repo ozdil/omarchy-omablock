@@ -4,6 +4,8 @@
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-Support_Development-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/ozdil)
 
+![OmaBlock Preview](preview.png)
+
 > **Omarchy Linux için çekirdek ve sistem seviyesinde, sıfır gecikmeli reklam ve takipçi engelleyici.**
 
 OmaBlock; tarayıcı eklentilerine bağımlı kalmadan tüm sistem genelinde reklam, telemetri, kötü amaçlı yazılım ve takipçileri engeller. Yapay zeka destekli DGA / phishing tespiti, netfilter / nftables kuralları ve kullanıcı alanında yüksek güvenlikli Rust motoru (`omablock-engine`) ile çalışır.
