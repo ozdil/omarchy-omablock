@@ -18,6 +18,8 @@ OmaBlock; tarayıcı eklentilerine bağımlı kalmadan tüm sistem genelinde rek
   - Shannon entropisi ve sezgisel algoritmalar ile sahte/üretilmiş alan adlarını tespit eder.
 - **Kategori Bazlı Seçici Filtreleme:**
   - Reklamlar, Telemetri, Kötü Amaçlı Yazılımlar, Sosyal Takipçiler ve Açılır Pencereler (Pop-ups) bağımsız yönetilebilir.
+- **OmaBlock Shield Bridge (Chrome & Chromium Köprüsü):**
+  - Çekirdek seviyesindeki DNS sinkhole korumasını tarayıcı içine taşıyan Manifest V3 uzantısı. DonanımHaber, Haberler.com gibi sitelerdeki first-party gömülü bannerları ve DOM içi reklam alanlarını sıfır gecikmeyle yok eder.
 - **Klavye Kısayolları ve Ergonomi:**
   - Space/Enter (aç/kapat), r (yenile), t (canlı test çalıştır), u (kuralları güncelle), a (künye overlay).
 - **Omarchy Tema Entegrasyonu:**

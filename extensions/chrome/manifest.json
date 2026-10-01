@@ -3,6 +3,7 @@
   "name": "OmaBlock Shield Bridge",
   "version": "1.0.0",
   "description": "Kernel-level zero-latency ad, tracker and cosmetic element shield bridge for Omarchy.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArlkT5Q/r4C5tYbTkjOcgmVNhITvT1aDar1Thf3o2uTMCcvPExyox065t72FDNHQFfGaa6Y4ralE0gQcadzYR1WRlA6G+dZJluWSgNA3AOheCUyc/i/nhp1DvgJuuUBb+9e1K3VV0ZEL5VuxeblgeuSokhzBCpxxGfRzhvr8hq5adrKOjbfRwD/UZZwMHq7bn5rrrtCd/2pQSvyfsXrI9XjQSK8TFhvpyJGrS/EDhWPYjemE3AF4YhDL5SACfoKdQunZK36PGdwOlZpq1ezMz809oF8E0DK2v8xkRgxa1uedbYLlYa4qq+xglWWsoMxHkYC1oAx9CnM2RGdlxwZAx3QIDAQAB",
   "permissions": [
     "declarativeNetRequest",
     "storage",

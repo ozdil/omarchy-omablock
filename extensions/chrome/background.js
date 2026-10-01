@@ -12,6 +12,10 @@ function connectNative() {
       handleNativeMessage(msg);
     });
     nativePort.onDisconnect.addListener(() => {
+      // Clear lastError silently if native messaging host is not installed
+      if (chrome.runtime.lastError) {
+        // Native messaging host not found or disconnected
+      }
       nativePort = null;
     });
   } catch (e) {

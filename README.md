@@ -27,6 +27,7 @@ Plugin ID: ozdil.omablock
 - Custom Allow and Deny Lists: Instantly whitelist or blacklist specific domains with zero DNS downtime.
 - Hardware Armor Control: Toggle USB access instantly through UI directly integrated with system state files.
 - Monochrome Design: Native Omarchy UI styling adhering strictly to typography standards and color palette rules.
+- OmaBlock Shield Bridge (Chrome / Chromium): Native Manifest V3 extension bridging the kernel-level DNS sinkhole with browser-level declarative rules and deep cosmetic DOM filtering for first-party advertising elements.
 - Hardened Rust Engine: Strict regex sanitization, safe atomic file replacement, bounded memory limits, and zeroize-secured memory buffers.
 
 ---
@@ -62,6 +63,14 @@ Plugin ID: ozdil.omablock
 |   - Atomic replacement via os.replace                   |
 |   - DNS cache purge via resolvectl flush-caches         |
 |   - 0.0.0.0 sinkhole for instantaneous connection drop  |
++---------------------------+-----------------------------+
+                            | System Sinkhole
+                            v
++---------------------------------------------------------+
+|         OmaBlock Shield Bridge (Chrome / Chromium)      |
+|   - Manifest V3 DeclarativeNetRequest ruleset           |
+|   - Cosmetic DOM Injection & first-party ad removal     |
+|   - Zero-latency synchronization with system shield     |
 +---------------------------------------------------------+
 ```
 

@@ -3,3 +3,5 @@ target/
 *.log
 omablock-engine
 __pycache__/
+_metadata/
+*.zip
