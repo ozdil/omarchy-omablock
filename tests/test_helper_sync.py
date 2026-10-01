@@ -108,6 +108,55 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 omablock_sync.apply_rules(oversized)
 
+    def test_apply_rules_aborts_on_unreadable_or_symlink_hosts(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rules_file = os.path.join(tmpdir, "rules.txt")
+            with open(rules_file, "w") as f:
+                f.write("0.0.0.0 badtracker.com\n")
+
+            mock_hosts = os.path.join(tmpdir, "hosts")
+            mock_backup = os.path.join(tmpdir, "hosts.bak")
+            mock_temp = os.path.join(tmpdir, "hosts.tmp")
+
+            omablock_sync.HOSTS_PATH = mock_hosts
+            omablock_sync.BACKUP_PATH = mock_backup
+            omablock_sync.TEMP_PATH = mock_temp
+
+            # Case 1: mock_hosts is a symlink
+            real_hosts = os.path.join(tmpdir, "real_hosts")
+            with open(real_hosts, "w") as f:
+                f.write("127.0.0.1 localhost\n")
+            os.symlink(real_hosts, mock_hosts)
+
+            with self.assertRaises(SystemExit):
+                omablock_sync.apply_rules(rules_file)
+
+            os.unlink(mock_hosts)
+
+            # Case 2: mock_hosts exists as unreadable / error on open
+            with open(mock_hosts, "w") as f:
+                f.write("127.0.0.1 localhost\n")
+            os.chmod(mock_hosts, 0o000)
+
+            # In user space test, opening 000 file causes PermissionError -> SystemExit
+            try:
+                with self.assertRaises(SystemExit):
+                    omablock_sync.apply_rules(rules_file)
+            finally:
+                os.chmod(mock_hosts, 0o644)
+
+    def test_clear_rules_aborts_on_symlink_hosts(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_hosts = os.path.join(tmpdir, "hosts")
+            real_hosts = os.path.join(tmpdir, "real_hosts")
+            with open(real_hosts, "w") as f:
+                f.write("127.0.0.1 localhost\n")
+            os.symlink(real_hosts, mock_hosts)
+
+            omablock_sync.HOSTS_PATH = mock_hosts
+            with self.assertRaises(SystemExit):
+                omablock_sync.clear_rules()
+
 
 if __name__ == "__main__":
     unittest.main()

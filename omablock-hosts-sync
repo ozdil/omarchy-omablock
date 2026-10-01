@@ -175,13 +175,16 @@ def ensure_backup():
             try:
                 os.unlink(BACKUP_PATH)
             except Exception as e:
-                print(f"Warning: Could not remove symlink {BACKUP_PATH}: {e}", file=sys.stderr)
-                return
+                print(f"Fatal error: Could not remove symlink {BACKUP_PATH}: {e}", file=sys.stderr)
+                sys.exit(1)
         else:
             return  # Clean backup already exists
 
-    if not os.path.exists(HOSTS_PATH) or os.path.islink(HOSTS_PATH):
+    if not os.path.lexists(HOSTS_PATH):
         return
+    if os.path.islink(HOSTS_PATH) or not os.path.isfile(HOSTS_PATH):
+        print(f"Fatal error: {HOSTS_PATH} is a symlink or not a regular file. Aborting backup.", file=sys.stderr)
+        sys.exit(1)
 
     try:
         flags_r = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
@@ -195,7 +198,8 @@ def ensure_backup():
     except FileExistsError:
         pass
     except Exception as e:
-        print(f"Warning: Could not create backup {BACKUP_PATH}: {e}", file=sys.stderr)
+        print(f"Fatal error: Could not create backup {BACKUP_PATH}: {e}. Aborting to prevent data loss.", file=sys.stderr)
+        sys.exit(1)
 
 
 def get_status():
@@ -285,14 +289,18 @@ def apply_rules(rules_file: str):
 
     # Read current hosts
     content = ""
-    if os.path.exists(HOSTS_PATH) and not os.path.islink(HOSTS_PATH):
+    if os.path.lexists(HOSTS_PATH):
+        if os.path.islink(HOSTS_PATH) or not os.path.isfile(HOSTS_PATH):
+            print(f"Fatal error: {HOSTS_PATH} is a symlink or not a regular file. Aborting.", file=sys.stderr)
+            sys.exit(1)
         try:
             flags_r = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
             fd_r = os.open(HOSTS_PATH, flags_r)
-            with open(fd_r, "r", encoding="utf-8", errors="ignore") as f:
+            with open(fd_r, "r", encoding="utf-8") as f:
                 content = f.read(32 * 1024 * 1024)
         except Exception as e:
-            print(f"Warning: Could not read {HOSTS_PATH}: {e}", file=sys.stderr)
+            print(f"Fatal error: Could not read {HOSTS_PATH} completely: {e}. Aborting to prevent data loss.", file=sys.stderr)
+            sys.exit(1)
 
     ensure_backup()
     clean_hosts = strip_omablock_block(content)
@@ -305,23 +313,33 @@ def apply_rules(rules_file: str):
             pass
 
     # Stream write with O_NOFOLLOW directly to prevent huge memory allocations
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(TEMP_PATH, flags, 0o644)
-    with open(fd, "w", encoding="utf-8") as f:
-        f.write(clean_hosts)
-        if not clean_hosts.endswith("\n"):
-            f.write("\n")
-        f.write(BEGIN_MARKER + "\n")
-        f.write(BANNER_COMMENT + "\n")
-        for d in valid_domains:
-            f.write(f"0.0.0.0 {d}\n")
-            if d in DOH_DOMAINS:
-                f.write(f":: {d}\n")
-        f.write(END_MARKER + "\n")
-    os.chmod(TEMP_PATH, 0o644)
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(TEMP_PATH, flags, 0o644)
+        with open(fd, "w", encoding="utf-8") as f:
+            f.write(clean_hosts)
+            if not clean_hosts.endswith("\n"):
+                f.write("\n")
+            f.write(BEGIN_MARKER + "\n")
+            f.write(BANNER_COMMENT + "\n")
+            for d in valid_domains:
+                f.write(f"0.0.0.0 {d}\n")
+                if d in DOH_DOMAINS:
+                    f.write(f":: {d}\n")
+            f.write(END_MARKER + "\n")
+        os.chmod(TEMP_PATH, 0o644)
 
-    # Atomic swap
-    os.replace(TEMP_PATH, HOSTS_PATH)
+        # Atomic swap
+        os.replace(TEMP_PATH, HOSTS_PATH)
+    except Exception as e:
+        print(f"Fatal error: Failed to write or replace {HOSTS_PATH}: {e}", file=sys.stderr)
+        if os.path.lexists(TEMP_PATH):
+            try:
+                os.unlink(TEMP_PATH)
+            except OSError:
+                pass
+        sys.exit(1)
+
     apply_browser_doh_policy()
     flush_dns_cache()
     print(f"Applied {len(valid_domains)} OmaBlock rules to {HOSTS_PATH}.")
@@ -382,18 +400,21 @@ def clear_nftables_rules():
 def clear_rules():
     """Removes OmaBlock rules from /etc/hosts and kernel Netfilter table."""
     clear_nftables_rules()
-    if not os.path.exists(HOSTS_PATH) or os.path.islink(HOSTS_PATH):
+    if not os.path.lexists(HOSTS_PATH):
         return
+    if os.path.islink(HOSTS_PATH) or not os.path.isfile(HOSTS_PATH):
+        print(f"Fatal error: {HOSTS_PATH} is a symlink or not a regular file. Aborting.", file=sys.stderr)
+        sys.exit(1)
 
     content = ""
     try:
         flags_r = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
         fd_r = os.open(HOSTS_PATH, flags_r)
-        with open(fd_r, "r", encoding="utf-8", errors="ignore") as f:
+        with open(fd_r, "r", encoding="utf-8") as f:
             content = f.read(32 * 1024 * 1024)
     except Exception as e:
-        print(f"Error reading {HOSTS_PATH}: {e}", file=sys.stderr)
-        return
+        print(f"Fatal error: Could not read {HOSTS_PATH} completely: {e}. Aborting to prevent data loss.", file=sys.stderr)
+        sys.exit(1)
 
     if BEGIN_MARKER not in content:
         flush_dns_cache()
@@ -409,13 +430,23 @@ def clear_rules():
         except OSError:
             pass
 
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(TEMP_PATH, flags, 0o644)
-    with open(fd, "w", encoding="utf-8") as f:
-        f.write(clean_hosts)
-    os.chmod(TEMP_PATH, 0o644)
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(TEMP_PATH, flags, 0o644)
+        with open(fd, "w", encoding="utf-8") as f:
+            f.write(clean_hosts)
+        os.chmod(TEMP_PATH, 0o644)
 
-    os.replace(TEMP_PATH, HOSTS_PATH)
+        os.replace(TEMP_PATH, HOSTS_PATH)
+    except Exception as e:
+        print(f"Fatal error: Failed to clear OmaBlock rules from {HOSTS_PATH}: {e}", file=sys.stderr)
+        if os.path.lexists(TEMP_PATH):
+            try:
+                os.unlink(TEMP_PATH)
+            except OSError:
+                pass
+        sys.exit(1)
+
     clear_browser_doh_policy()
     flush_dns_cache()
     print("Cleared OmaBlock rules from /etc/hosts.")
