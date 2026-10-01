@@ -39,6 +39,10 @@ package() {
     install -d "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/qml"
     cp -r qml/* "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/qml/"
 
+    # Omarchy Chromium Browser Extension
+    install -d "${pkgdir}/usr/share/omarchy/default/chromium/extensions/omablock"
+    cp -r extensions/chrome/* "${pkgdir}/usr/share/omarchy/default/chromium/extensions/omablock/"
+
     install -Dm644 "README.md" "${pkgdir}/usr/share/doc/${pkgname}/README.md"
     install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }
