@@ -1,6 +1,6 @@
 # Maintainer: Ozan Özdil <ozdil>
 pkgname=omarchy-omablock
-pkgver=1.4.0
+pkgver=1.4.1
 pkgrel=1
 pkgdesc="Machine-Age Zero-Latency AdBlocker & Privacy Shield for Omarchy Linux"
 arch=('x86_64')

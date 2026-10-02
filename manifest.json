@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "ozdil.omablock",
   "name": "OmaBlock",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "author": "Ozan Özdil (ozdil)",
   "license": "MIT",
   "description": "Zero-latency system-wide adblocker, DNS/hosts privacy shield, and OmaBlock Shield Bridge for Chromium on Omarchy Linux.",
