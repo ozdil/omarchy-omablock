@@ -76,8 +76,17 @@ Panel {
   }
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
-  readonly property color dim: Qt.darker(foreground, 1.45)
   readonly property color accent: Color.accent
+  // Theme-agnostic semantic text tiers. Derived from the theme foreground via
+  // alpha so contrast against the popup background holds on both dark and
+  // light themes (root.textSecondary maps to a surface tone on many dark themes and
+  // becomes unreadable on the popup background).
+  readonly property color textPrimary: foreground
+  readonly property color textSecondary: Util.alpha(foreground, 0.85)
+  readonly property color textTertiary: Util.alpha(foreground, 0.68)
+  readonly property color dim: textSecondary
+  readonly property color badgeBackground: Util.alpha(foreground, 0.08)
+  readonly property color overlayBackground: Util.alpha(Color.popups.background, 0.97)
   readonly property string fontFamily: (root.bar && root.bar.fontFamily) ? root.bar.fontFamily : ((typeof Style !== "undefined" && Style.font && Style.font.family) ? Style.font.family : "JetBrainsMono Nerd Font, JetBrains Mono, monospace")
 
   onOpenedChanged: {
@@ -437,7 +446,7 @@ Panel {
             id: heroIcon
             textFormat: Text.PlainText
             text: ""
-            color: (root.isEnabled && root.systemHostsActive) ? Color.accent : Color.muted
+            color: (root.isEnabled && root.systemHostsActive) ? Color.accent : root.textSecondary
             font.family: root.fontFamily
             font.pixelSize: Style.font.display
             anchors.left: parent.left
@@ -479,7 +488,7 @@ Panel {
                   id: statusPillText
                   anchors.centerIn: parent
                   text: (root.isEnabled && root.systemHostsActive) ? "ACTIVE • PROTECTED" : "SHIELD DISABLED"
-                  color: (root.isEnabled && root.systemHostsActive) ? Color.accent : Color.muted
+                  color: (root.isEnabled && root.systemHostsActive) ? Color.accent : root.textSecondary
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption - 1
                   font.bold: true
@@ -490,7 +499,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: "Kernel-level zero-latency ad and tracker shield"
-              color: Color.muted
+              color: root.textSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               elide: Text.ElideRight
@@ -643,7 +652,7 @@ Panel {
                 text: "Blocked Rules"
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
-                color: Color.muted
+                color: root.textSecondary
               }
             }
           }
@@ -688,7 +697,7 @@ Panel {
                 text: "Sinkhole Latency"
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
-                color: Color.muted
+                color: root.textSecondary
               }
             }
           }
@@ -714,7 +723,7 @@ Panel {
                   text: "󰒃"
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
-                  color: (root.isEnabled && root.systemHostsActive) ? Color.accent : Color.muted
+                  color: (root.isEnabled && root.systemHostsActive) ? Color.accent : root.textSecondary
                 }
 
                 Text {
@@ -733,7 +742,7 @@ Panel {
                 text: "Enforced DNS"
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
-                color: Color.muted
+                color: root.textSecondary
               }
             }
           }
@@ -778,7 +787,7 @@ Panel {
                 text: ""
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 2
-                color: root.blockingLevel === "standard" ? Color.accent : Color.muted
+                color: root.blockingLevel === "standard" ? Color.accent : root.textSecondary
               }
 
               Text {
@@ -787,7 +796,7 @@ Panel {
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: root.blockingLevel === "standard"
-                color: root.blockingLevel === "standard" ? Color.foreground : Color.muted
+                color: root.blockingLevel === "standard" ? Color.foreground : root.textSecondary
               }
             }
           }
@@ -819,7 +828,7 @@ Panel {
                 text: ""
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 2
-                color: root.blockingLevel === "aggressive" ? Color.accent : Color.muted
+                color: root.blockingLevel === "aggressive" ? Color.accent : root.textSecondary
               }
 
               Text {
@@ -828,7 +837,7 @@ Panel {
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: root.blockingLevel === "aggressive"
-                color: root.blockingLevel === "aggressive" ? Color.foreground : Color.muted
+                color: root.blockingLevel === "aggressive" ? Color.foreground : root.textSecondary
               }
             }
           }
@@ -860,7 +869,7 @@ Panel {
                 text: ""
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 2
-                color: root.blockingLevel === "ultimate" ? Color.accent : Color.muted
+                color: root.blockingLevel === "ultimate" ? Color.accent : root.textSecondary
               }
 
               Text {
@@ -869,7 +878,7 @@ Panel {
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: root.blockingLevel === "ultimate"
-                color: root.blockingLevel === "ultimate" ? Color.foreground : Color.muted
+                color: root.blockingLevel === "ultimate" ? Color.foreground : root.textSecondary
               }
             }
           }
@@ -950,7 +959,7 @@ Panel {
               text: ""
               font.family: root.fontFamily
               font.pixelSize: Style.font.icon
-              color: root.catAds ? Color.accent : Color.muted
+              color: root.catAds ? Color.accent : root.textSecondary
             }
 
             ToggleSwitch {
@@ -985,7 +994,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: (root.countAds > 0 ? root.countAds.toLocaleString() : "75,416") + " domains • Popups, video ads, syndication"
-                color: Color.muted
+                color: root.textSecondary
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
                 elide: Text.ElideRight
@@ -1020,7 +1029,7 @@ Panel {
               text: "󰈉"
               font.family: root.fontFamily
               font.pixelSize: Style.font.icon
-              color: root.catTelemetry ? Color.accent : Color.muted
+              color: root.catTelemetry ? Color.accent : root.textSecondary
             }
 
             ToggleSwitch {
@@ -1055,7 +1064,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: (root.countTelemetry > 0 ? root.countTelemetry.toLocaleString() : "3,666") + " domains • OS metrics, analytics, crash logs"
-                color: Color.muted
+                color: root.textSecondary
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
                 elide: Text.ElideRight
@@ -1090,7 +1099,7 @@ Panel {
               text: ""
               font.family: root.fontFamily
               font.pixelSize: Style.font.icon
-              color: root.catMalware ? Color.accent : Color.muted
+              color: root.catMalware ? Color.accent : root.textSecondary
             }
 
             ToggleSwitch {
@@ -1125,7 +1134,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: (root.countMalware > 0 ? root.countMalware.toLocaleString() : "449") + " domains • Scams, botnets, crypto miners"
-                color: Color.muted
+                color: root.textSecondary
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
                 elide: Text.ElideRight
@@ -1160,7 +1169,7 @@ Panel {
               text: ""
               font.family: root.fontFamily
               font.pixelSize: Style.font.icon
-              color: root.catSocial ? Color.accent : Color.muted
+              color: root.catSocial ? Color.accent : root.textSecondary
             }
 
             ToggleSwitch {
@@ -1195,7 +1204,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: (root.countSocial > 0 ? root.countSocial.toLocaleString() : "30") + " domains • Facebook pixel, TikTok tracking"
-                color: Color.muted
+                color: root.textSecondary
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
                 elide: Text.ElideRight
@@ -1230,7 +1239,7 @@ Panel {
               text: ""
               font.family: root.fontFamily
               font.pixelSize: Style.font.icon
-              color: root.catPopups ? Color.accent : Color.muted
+              color: root.catPopups ? Color.accent : root.textSecondary
             }
 
             ToggleSwitch {
@@ -1265,7 +1274,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: (root.countPopups > 0 ? root.countPopups.toLocaleString() : "50,085") + " domains • Pop-up, pop-under, redirects"
-                color: Color.muted
+                color: root.textSecondary
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption - 1
                 elide: Text.ElideRight
@@ -1300,7 +1309,7 @@ Panel {
             text: root.isTesting ? "" : (root.testSuccess ? "" : "")
             font.family: root.fontFamily
             font.pixelSize: Style.font.icon
-            color: root.isTesting ? Color.foreground : (root.testSuccess ? Color.accent : Color.muted)
+            color: root.isTesting ? Color.foreground : (root.testSuccess ? Color.accent : root.textSecondary)
           }
 
           Column {
@@ -1325,7 +1334,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: root.testMessage ? root.testMessage : "Test known ad servers (doubleclick.net, pagead2) for 0.0.0.0 sinkhole."
-              color: Color.muted
+              color: root.textSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption - 1
               elide: Text.ElideRight
@@ -1438,7 +1447,7 @@ Panel {
             text: "󰒃"
             font.family: root.fontFamily
             font.pixelSize: Style.font.icon
-            color: root.dohPrevention ? Color.accent : Color.muted
+            color: root.dohPrevention ? Color.accent : root.textSecondary
           }
 
           ToggleSwitch {
@@ -1473,7 +1482,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: root.dohPrevention ? "Mozilla canary domain signals browsers to obey system hosts" : "Browsers may bypass sinkhole via encrypted DoH"
-              color: Color.muted
+              color: root.textSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption - 1
               elide: Text.ElideRight
@@ -1508,7 +1517,7 @@ Panel {
             text: "󰚩"
             font.family: root.fontFamily
             font.pixelSize: Style.font.icon
-            color: root.aiProtection ? Color.accent : Color.muted
+            color: root.aiProtection ? Color.accent : root.textSecondary
           }
 
           ToggleSwitch {
@@ -1543,7 +1552,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: root.aiProtection ? "Shannon entropy & typo-squatting local inference" : "AI heuristic threat classification is disabled"
-              color: Color.muted
+              color: root.textSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption - 1
               elide: Text.ElideRight
@@ -1578,7 +1587,7 @@ Panel {
             text: "󰟀"
             font.family: root.fontFamily
             font.pixelSize: Style.font.icon
-            color: (root.kernelEnforcement && root.kernelActive) ? Color.accent : (root.kernelEnforcement ? root.dim : Color.muted)
+            color: (root.kernelEnforcement && root.kernelActive) ? Color.accent : (root.kernelEnforcement ? root.textSecondary : root.textTertiary)
           }
 
           ToggleSwitch {
@@ -1613,7 +1622,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: root.kernelEnforcement ? (root.kernelActive ? ("Active nftables chain (" + root.kernelRuleCount + " rules loaded)") : "Kernel nftables enabled (waiting for hosts sync)") : "Kernel-level L3/L4 packet dropping disabled"
-              color: Color.muted
+              color: root.textSecondary
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption - 1
               elide: Text.ElideRight
@@ -1741,7 +1750,7 @@ Panel {
                     text: ""
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
-                    color: Color.muted
+                    color: root.textSecondary
                   }
                 }
               }
@@ -1794,7 +1803,7 @@ Panel {
                     text: ""
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
-                    color: Color.muted
+                    color: root.textSecondary
                   }
                 }
               }
@@ -1809,7 +1818,7 @@ Panel {
           text: "OmaBlock v1.0 • Updated: " + root.lastUpdated
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption - 2
-          color: Color.muted
+          color: root.textSecondary
         }
 
         Item {
@@ -1825,7 +1834,7 @@ Panel {
       id: aboutOverlay
       anchors.fill: parent
       visible: root.showAboutModal
-      color: Qt.rgba(0.05, 0.05, 0.07, 0.96)
+      color: root.overlayBackground
       z: 99
 
       MouseArea {
