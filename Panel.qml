@@ -1891,7 +1891,7 @@ Panel {
 
           Button {
             id: closeAboutBtn
-            text: "✕"
+            text: "\uf00d"
             bordered: true
             foreground: root.bar ? root.bar.foreground : Color.foreground
             fontFamily: root.fontFamily
