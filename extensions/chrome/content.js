@@ -1,17 +1,17 @@
 // OmaBlock DOM Sentinel Content Script
-// Ensures zero-FOUC elimination of dynamically injected first-party ads with full whitelist bypass support
+// Ensures zero-FOUC elimination of verified ads with dynamic whitelist bypass and zero UI breakage
 
 (async function() {
   'use strict';
 
   const hostname = window.location.hostname.toLowerCase();
 
-  // 1. Built-in essential service protections
-  // YouTube, Google Search, Wikipedia, and essential productivity tools must never have destructive DOM mutations applied
+  // 1. Built-in essential service protections: Never touch critical productivity & video platforms
   const PROTECTED_DOMAINS = [
     'youtube.com',
     'www.youtube.com',
     'm.youtube.com',
+    'youtu.be',
     'google.com',
     'www.google.com',
     'github.com',
@@ -20,58 +20,106 @@
 
   for (const domain of PROTECTED_DOMAINS) {
     if (hostname === domain || hostname.endsWith('.' + domain)) {
-      return; // Completely bypass cosmetic content scripts on protected platforms
+      return; // Absolute zero-touch on protected platforms
     }
   }
 
-  // 2. Check dynamic whitelist from chrome.storage.local (synced from OmaBlock Engine)
+  // 2. Dynamic Whitelist Check (Extension Storage synced or user toggle)
   try {
-    const store = await chrome.storage.local.get(['omablock_whitelist', 'omablock_disabled']);
+    const store = await chrome.storage.local.get(['omablock_disabled', 'omablock_whitelist']);
     if (store && store.omablock_disabled) {
-      return;
+      return; // Global extension pause
     }
-    const whitelist = store && store.omablock_whitelist ? store.omablock_whitelist : [];
+    const whitelist = (store && store.omablock_whitelist) ? store.omablock_whitelist : [];
     for (const wl of whitelist) {
       const cleanWl = String(wl).toLowerCase().trim();
       if (cleanWl && (hostname === cleanWl || hostname.endsWith('.' + cleanWl))) {
-        return; // Domain is whitelisted by user in OmaBlock
+        return; // Current domain is whitelisted
       }
     }
   } catch (e) {
-    // Fail-open for safety
+    // Fail-safe: continue safely
   }
 
-  // 3. Precision DOM Purge for target first-party ad publishers (e.g. DonanımHaber)
-  function purgeInlineAds() {
-    if (!hostname.includes('donanimhaber.com')) {
-      return;
+  // 3. Inject Safe Dynamic CSS Rules (Scoped strictly to confirmed advertising elements)
+  const SAFE_CSS = `
+    div[id*="google_ads"],
+    div[id^="div-gpt-ad"],
+    div[class*="dfp-ad"],
+    div[class*="adsbygoogle"],
+    ins.adsbygoogle,
+    iframe[id*="google_ads_iframe"],
+    .advertisement,
+    .ad-banner,
+    .sponsor-content,
+    .outbrain,
+    .taboola,
+    .criteo-ad,
+    .yandex-ad,
+    [data-ad-unit],
+    [data-ad-client],
+    .popup-ad,
+    .ad-overlay,
+    .modal-advertisement,
+    .floating-banner,
+    #interstitial-ad,
+    div[id*="interstitial-ad"],
+    div[class*="interstitial-ad"] {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      pointer-events: none !important;
     }
-    const adAnchors = document.querySelectorAll('a[href*="ad.donanimhaber.com"], a[href*="adserve.donanimhaber.com"], div#rotator0, div#rotator1, div#rotator2');
-    for (let i = 0; i < adAnchors.length; i++) {
-      const el = adAnchors[i];
-      if (el && el.parentNode) {
-        el.style.setProperty('display', 'none', 'important');
-        el.style.setProperty('visibility', 'hidden', 'important');
-        el.style.setProperty('height', '0', 'important');
+  `;
+
+  const styleEl = document.createElement('style');
+  styleEl.id = 'omablock-dynamic-cosmetic';
+  styleEl.textContent = SAFE_CSS;
+  (document.head || document.documentElement).appendChild(styleEl);
+
+  // 4. Site-Specific First-Party Element Purge (e.g. DonanımHaber)
+  function purgeFirstPartyAds() {
+    if (hostname.includes('donanimhaber.com')) {
+      const targets = document.querySelectorAll(
+        'a[href*="ad.donanimhaber.com"], a[href*="adserve.donanimhaber.com"], img[src*="adserve.donanimhaber.com"], div#rotator0, div#rotator1, div#rotator2, div#rotator3, div.reklam-alani, div[id^="dha-counter"]'
+      );
+      for (let i = 0; i < targets.length; i++) {
+        const el = targets[i];
+        if (el && el.parentNode) {
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+          el.style.setProperty('height', '0', 'important');
+          el.style.setProperty('pointer-events', 'none', 'important');
+        }
+      }
+    } else if (hostname.includes('haberler.com')) {
+      const targets = document.querySelectorAll('#sticky-ad-container, .ana_masthead_1056x250');
+      for (let i = 0; i < targets.length; i++) {
+        const el = targets[i];
+        if (el && el.parentNode) {
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+          el.style.setProperty('height', '0', 'important');
+        }
       }
     }
   }
 
-  // Run on initial parse
-  purgeInlineAds();
+  // Initial purge
+  purgeFirstPartyAds();
 
-  // Low-overhead observer for single-page dynamic insertions
+  // Low-overhead mutation observer for single-page dynamic insertions
   if (document.body) {
     const observer = new MutationObserver(() => {
-      purgeInlineAds();
+      purgeFirstPartyAds();
     });
     observer.observe(document.body, { childList: true, subtree: true });
   } else {
     document.addEventListener('DOMContentLoaded', () => {
-      purgeInlineAds();
+      purgeFirstPartyAds();
       if (document.body) {
         const observer = new MutationObserver(() => {
-          purgeInlineAds();
+          purgeFirstPartyAds();
         });
         observer.observe(document.body, { childList: true, subtree: true });
       }
