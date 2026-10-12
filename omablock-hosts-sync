@@ -79,10 +79,7 @@ POLICY_DIRS = [
 ]
 POLICY_FILENAME = "omablock_policies.json"
 POLICY_MARKER = '"_omablock_managed": true'
-POLICY_CONTENT = (
-    '{"_omablock_managed": true, "DnsOverHttpsMode": "off", "QuicAllowed": false, '
-    '"ExtensionInstallForcelist": ["ddkjiahejlhfcafbddmgiahcphecmpfh;https://clients2.google.com/service/update2/crx"]}\n'
-)
+POLICY_CONTENT = '{"_omablock_managed": true, "DnsOverHttpsMode": "off", "QuicAllowed": false}\n'
 
 DOH_DOMAINS = {
     "use-application-dns.net",
