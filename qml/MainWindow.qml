@@ -1092,13 +1092,18 @@ Item {
                                 anchors.rightMargin: 10
                                 spacing: 8
 
-                                TextInput {
+                                BoundedTextInput {
                                     id: addInput
                                     Layout.fillWidth: true
                                     font.family: Theme.fontFamily
                                     font.pixelSize: 12
                                     color: Theme.textMain
-                                    clip: true
+                                    verticalAlignment: TextEdit.AlignVCenter
+                                    placeholderText: root.activeListTab === "whitelist"
+                                                      ? "Enter domain to trust (e.g. tracking.example.com)..."
+                                                      : "Enter domain to sinkhole (e.g. ads.annoying.com)..."
+                                    placeholderTextColor: Theme.textDim
+                                    maxLength: 256
                                     onAccepted: {
                                         if (root.activeListTab === "whitelist") {
                                             root.addWhitelist(text);
@@ -1106,17 +1111,6 @@ Item {
                                             root.addBlacklist(text);
                                         }
                                         text = "";
-                                    }
-
-                                    Text {
-                                        anchors.fill: parent
-                                        text: root.activeListTab === "whitelist"
-                                              ? "Enter domain to trust (e.g. tracking.example.com)..."
-                                              : "Enter domain to sinkhole (e.g. ads.annoying.com)..."
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: 12
-                                        color: Theme.textDim
-                                        visible: !addInput.text && !addInput.activeFocus
                                     }
                                 }
                             }

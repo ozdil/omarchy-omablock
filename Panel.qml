@@ -1681,18 +1681,33 @@ Panel {
             }
           }
 
-          TextField {
-            id: domainInput
+          BorderSurface {
             anchors.left: parent.left
             anchors.right: ruleButtons.left
             anchors.rightMargin: Style.space(8)
             anchors.verticalCenter: parent.verticalCenter
             implicitHeight: Style.space(32)
-            placeholderText: "Domain (e.g. ad.example.com)"
-            onAccepted: {
-              if (domainInput.text.trim()) {
-                root.addWhitelist(domainInput.text.trim())
-                domainInput.text = ""
+            radius: Style.cornerRadius
+            color: Style.controlFill(false, domainInput.activeFocus, Color.foreground, Color.accent)
+            borderSpec: Border.controlSpec(domainInput.activeFocus ? "hover-cursor" : "normal", Color.foreground, Color.accent)
+
+            BoundedTextInput {
+              id: domainInput
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(8)
+              anchors.rightMargin: Style.space(8)
+              verticalAlignment: TextEdit.AlignVCenter
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              color: root.textPrimary
+              placeholderText: "Domain (e.g. ad.example.com)"
+              placeholderTextColor: root.textTertiary
+              maxLength: 256
+              onAccepted: {
+                if (domainInput.text.trim()) {
+                  root.addWhitelist(domainInput.text.trim())
+                  domainInput.text = ""
+                }
               }
             }
           }
