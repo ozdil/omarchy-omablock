@@ -63,7 +63,7 @@ omablock --resume-network
 omablock --restore-hosts     # /etc/hosts dosyasını ilk değişiklikten önceki yedeğe döndürür
 omablock verify-integrity    # 0 = OK, 1 = MISMATCH, 3 = UNKNOWN
 ```
-Çıkış kodları: `0` başarılı, `1` ayar kaydedildi ama sisteme uygulanamadı, `2` geçersiz alan adı, kategori veya seçenek.
+Çıkış kodları: `0` başarılı, `1` ayar kaydedildi ama sisteme uygulanamadı, `2` geçersiz alan adı, kategori veya seçenek, `4` ayar kaydedildi ama sistem yardımcısı (`omablock-hosts-sync`) kurulu değil.
 
 ### Omarchy Shell Yapılandırması
 `~/.config/omarchy/shell.json` dosyasında `bar.layout.right` altına ekleyin:

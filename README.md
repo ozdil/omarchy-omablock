@@ -191,7 +191,7 @@ omablock --restore-hosts
 omablock verify-integrity
 ```
 
-Exit codes: `0` success, `1` the change was saved but applying it to the system failed, `2` invalid domain, category or option.
+Exit codes: `0` success, `1` the change was saved but applying it to the system failed, `2` invalid domain, category or option, `4` the change was saved but the system helper (`omablock-hosts-sync`) is not installed.
 
 ---
 

@@ -65,6 +65,8 @@ Item {
             if (okMsg) root.testResultMsg = okMsg;
         } else if (exitCode === 2) {
             root.testResultMsg = "Rejected: invalid domain or option";
+        } else if (exitCode === 4) {
+            root.testResultMsg = "Saved. Install the system helper (makepkg -si) to apply it";
         } else {
             root.testResultMsg = "Action failed (code " + exitCode + ")";
         }

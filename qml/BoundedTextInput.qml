@@ -14,9 +14,6 @@ TextEdit {
     property bool multiline: false
 
     signal accepted()
-    // TextEdit has no textEdited() signal (only TextInput does); declare it so
-    // insertCleanText() can emit it without a TypeError on every paste.
-    signal textEdited()
 
     function insertCleanText(raw) {
         if (readOnly)
@@ -42,7 +39,10 @@ TextEdit {
             insert(start, clean);
             cursorPosition = start + clean.length;
         }
-        control.textEdited();
+        // TextEdit only has textEdited() from Qt 6.9 on; declaring it ourselves would be an
+        // invalid override there, so emit it only where it exists.
+        if (typeof control.textEdited === "function")
+            control.textEdited();
     }
 
     function startBoundedPaste() {

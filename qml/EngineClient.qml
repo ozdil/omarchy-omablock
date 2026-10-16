@@ -16,7 +16,7 @@ Item {
     property string currentActionMsg: ""
 
     signal statusReceived(var data)
-    // exitCode: 0 ok, 1 failed (e.g. privileged sync), 2 rejected input
+    // exitCode: 0 ok, 1 failed (e.g. privileged sync), 2 rejected input, 4 helper not installed
     signal actionFinished(int exitCode, string okMsg)
 
     visible: false

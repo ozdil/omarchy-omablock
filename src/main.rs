@@ -619,6 +619,14 @@ fn get_sync_bin_path() -> &'static str {
 /// pkexec with a second password prompt.
 fn run_privileged_helper(args: &[&str], max_output: usize) -> Option<Vec<u8>> {
     let sync_bin = get_sync_bin_path();
+    if !std::path::Path::new(sync_bin).exists() {
+        // User-space install without the package: nothing to run, and asking pkexec
+        // would show a password prompt only to fail on the missing file
+        if !HELPER_MISSING.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!("Notice: omablock-hosts-sync is not installed; settings are saved but not applied system-wide");
+        }
+        return None;
+    }
     let mut sudo_args = vec!["-n", sync_bin];
     sudo_args.extend_from_slice(args);
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -770,6 +778,14 @@ pub fn is_system_hosts_active_from_reader<R: BufRead>(reader: R) -> bool {
 /// Set when a privileged hosts sync fails, so the command exits non-zero and the
 /// panel can report the failure instead of a success toast.
 static SYNC_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Set when the privileged helper is not installed (build.sh-only setup); exit code 4.
+static HELPER_MISSING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Exit for a command that needed the privileged helper and did not get it to run.
+fn exit_privileged_failure() -> ! {
+    let missing = HELPER_MISSING.load(std::sync::atomic::Ordering::Relaxed);
+    std::process::exit(if missing { 4 } else { 1 })
+}
 
 fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
     if !cfg.enabled {
@@ -882,8 +898,10 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
     if res.is_some() {
         active_domains.len()
     } else {
-        eprintln!("Warning: omablock-hosts-sync --apply failed or timed out");
-        SYNC_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
+        if !HELPER_MISSING.load(std::sync::atomic::Ordering::Relaxed) {
+            eprintln!("Warning: omablock-hosts-sync --apply failed or timed out");
+            SYNC_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         0
     }
 }
@@ -1376,7 +1394,7 @@ fn main() {
             let ok = run_privileged_helper(&["--restore-backup"], 16384).is_some();
             println!("Hosts restored from backup: {}", ok);
             if !ok {
-                std::process::exit(1);
+                exit_privileged_failure();
             }
             // The restored file has no OmaBlock block; turn the shield off so the next
             // action does not silently re-apply it and the status matches /etc/hosts
@@ -1559,14 +1577,14 @@ fn main() {
             let ok = run_privileged_helper(&["--blackout-on"], 16384).is_some();
             println!("Panic blackout applied: {}", ok);
             if !ok {
-                std::process::exit(1);
+                exit_privileged_failure();
             }
         }
         "--resume-network" | "resume-network" => {
             let ok = run_privileged_helper(&["--blackout-off"], 16384).is_some();
             println!("Network resumed: {}", ok);
             if !ok {
-                std::process::exit(1);
+                exit_privileged_failure();
             }
         }
         "--toggle-usb-armor" | "toggle-usb-armor" => {
@@ -1579,6 +1597,9 @@ fn main() {
         }
     }
 
+    if !is_status && HELPER_MISSING.load(std::sync::atomic::Ordering::Relaxed) {
+        std::process::exit(4);
+    }
     if !is_status && SYNC_FAILED.load(std::sync::atomic::Ordering::Relaxed) {
         std::process::exit(1);
     }

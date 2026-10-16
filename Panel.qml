@@ -120,6 +120,8 @@ Panel {
       if (okMsg) root.showToast(okMsg)
     } else if (exitCode === 2) {
       root.showToast("Rejected: invalid domain or option")
+    } else if (exitCode === 4) {
+      root.showToast("Saved. Install the system helper (makepkg -si) to apply it")
     } else {
       root.showToast("Action failed (code " + exitCode + ")")
     }
