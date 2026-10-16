@@ -12,6 +12,19 @@ OmaBlock; tarayıcı eklentilerine bağımlı kalmadan tüm sistem genelinde rek
 
 ---
 
+## 1.5.0 ile Gelen Yenilikler
+
+- Doğru çekirdek kuralları: nftables tabloları doğru yazılıyor ve ayrıcalıklı yardımcı üzerinden uygulanıyor.
+- Daha güvenli `/etc/hosts` senkronu: dosyanın izinlerini ve sahibini koruyan atomik yazma, her kuralın önce alan adı olarak doğrulanması.
+- Duraklatma süresi dolunca kendiliğinden biter. `omablock --restore-hosts` orijinal `/etc/hosts` dosyasını geri yükler.
+- Doğru durum bilgisi: panel gerçek aktif kural sayısını ve her çıkış kodu için anlaşılır bir mesaj gösterir.
+- Türkçe ve İngilizce Chrome / Chromium eklentisi: sekme başına rozet, sayfa açılırken reklam görünmez.
+- Her değişiklikte uçtan uca, Rust ve QML testleri CI'da çalışır.
+
+Tüm liste: [CHANGELOG.md](CHANGELOG.md)
+
+---
+
 ## Yetenekler ve Özellikler
 
 - **Sistem Düzeyinde Sıfır Gecikme:**

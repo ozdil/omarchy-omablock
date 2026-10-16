@@ -1,6 +1,6 @@
 [package]
 name = "omablock-engine"
-version = "1.4.1"
+version = "1.5.0"
 edition = "2021"
 # self_defense.rs uses slice::as_chunks
 rust-version = "1.88"

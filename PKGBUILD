@@ -1,6 +1,6 @@
 # Maintainer: Ozan Özdil <ozdil>
 pkgname=omarchy-omablock
-pkgver=1.4.1
+pkgver=1.5.0
 pkgrel=1
 pkgdesc="Machine-Age Zero-Latency AdBlocker & Privacy Shield for Omarchy Linux"
 arch=('x86_64')
@@ -65,5 +65,6 @@ package() {
     cp -r extensions/chrome/* "${pkgdir}/usr/share/omarchy/default/chromium/extensions/omablock/"
 
     install -Dm644 "README.md" "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+    install -Dm644 "CHANGELOG.md" "${pkgdir}/usr/share/doc/${pkgname}/CHANGELOG.md"
     install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }

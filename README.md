@@ -13,6 +13,19 @@ Plugin ID: ozdil.omablock
 
 ---
 
+## What's New in 1.5.0
+
+- Correct kernel rules: the nftables tables are written correctly and applied through the privileged helper.
+- Safer `/etc/hosts` sync: atomic writes that keep the file's mode and owner, and every rule validated as a domain first.
+- Pause ends on its own, and `omablock --restore-hosts` puts back the original `/etc/hosts`.
+- Accurate status: the panel shows the real number of active rules and a clear message for each exit code.
+- Chrome / Chromium extension in English and Turkish, with a per-tab badge and no ad flash on load.
+- End-to-end, Rust and QML tests run in CI on every change.
+
+Full list: [CHANGELOG.md](CHANGELOG.md)
+
+---
+
 ## Features
 
 - Zero Latency (< 0.1ms): Blocked domains are written to `/etc/hosts` as `0.0.0.0` sinkhole entries, which the system resolver (glibc NSS, in user space) answers locally without a middleman proxy or battery drain.

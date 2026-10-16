@@ -57,7 +57,7 @@ Panel {
   readonly property string manifestFallbackPath: (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/ozdil.omablock/manifest.json"
 
   property string pluginName: "OmaBlock"
-  property string pluginVersion: "1.4.1"
+  property string pluginVersion: "1.5.0"
   property string pluginDescription: "Zero-latency system-wide adblocker, DNS/hosts privacy shield, and OmaBlock Shield Bridge for Chromium on Omarchy Linux."
   property string pluginAuthor: "Ozan Özdil (ozdil)"
   property string pluginLicense: "MIT"
