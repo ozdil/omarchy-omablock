@@ -28,10 +28,18 @@ jobs:
       - name: Rust tests
         run: cargo test --locked
 
+      - name: Privileged flow end to end (private namespaces)
+        # engine -> sudo -> omablock-hosts-sync -> /etc/hosts and nftables, against a
+        # copy of /etc in its own mount and network namespace
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q nftables
+          cargo build --locked
+          sudo bash tests/e2e_privileged.sh target/debug/omablock-engine
+
       - name: Qt runtime for the QML tests
         # tests/test_qml_runtime.py loads the shipped QML with Quickshell stand-ins
         run: |
-          sudo apt-get update -q
           sudo apt-get install -y -q libegl1 libgl1 libxkbcommon0 libfontconfig1
           python3 -m pip install --user --break-system-packages "PySide6-Essentials==6.12.0"
 
