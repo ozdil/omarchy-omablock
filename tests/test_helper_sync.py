@@ -287,6 +287,29 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
         self.assertNotIn("iifname", omablock_sync.BLACKOUT_SCRIPT)
         self.assertIn("delete table inet omablock_blackout", omablock_sync.BLACKOUT_SCRIPT)
 
+    def test_apply_keeps_hosts_mode(self):
+        with open(omablock_sync.HOSTS_PATH, "w") as f:
+            f.write("127.0.0.1 localhost\n")
+        os.chmod(omablock_sync.HOSTS_PATH, 0o640)
+        rules_file = os.path.join(self._sandbox.name, "rules.txt")
+        with open(rules_file, "w") as f:
+            f.write("0.0.0.0 badtracker.com\n")
+        omablock_sync.apply_rules(rules_file)
+        self.assertEqual(os.stat(omablock_sync.HOSTS_PATH).st_mode & 0o777, 0o640)
+        omablock_sync.clear_rules()
+        self.assertEqual(os.stat(omablock_sync.HOSTS_PATH).st_mode & 0o777, 0o640)
+
+    def test_helper_lock_is_exclusive(self):
+        import fcntl
+        fd = omablock_sync.acquire_helper_lock()
+        try:
+            other = os.open(os.path.join(omablock_sync.KERNEL_STATE_DIR, "helper.lock"), os.O_RDWR)
+            with self.assertRaises(BlockingIOError):
+                fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            os.close(other)
+        finally:
+            os.close(fd)
+
 
 if __name__ == "__main__":
     unittest.main()
