@@ -18,23 +18,31 @@ pub struct KernelNetfilter;
 
 impl KernelNetfilter {
     pub const TABLE_NAME: &'static str = "omablock";
+    /// Separate table so `--resume-network` never wipes the DoH/DoT enforcement table.
+    pub const BLACKOUT_TABLE_NAME: &'static str = "omablock_blackout";
     pub const FAMILY: &'static str = "inet";
+
+    /// Returns the first nft binary found in the trusted system locations
+    pub fn nft_path() -> Option<&'static str> {
+        ["/usr/bin/nft", "/usr/sbin/nft", "/sbin/nft"]
+            .into_iter()
+            .find(|p| Path::new(p).is_file())
+    }
 
     /// Checks if nftables CLI tool is available on the system
     pub fn is_nft_available() -> bool {
-        let cmd_paths = ["/usr/bin/nft", "/sbin/nft", "/usr/sbin/nft"];
-        cmd_paths.iter().any(|p| Path::new(p).is_file())
+        Self::nft_path().is_some()
     }
 
     /// Checks if omablock kernel table is currently active in the Linux kernel
     pub fn is_active() -> bool {
-        if !Self::is_nft_available() {
+        let Some(nft) = Self::nft_path() else {
             return false;
-        }
+        };
 
         let deadline = std::time::Instant::now() + Duration::from_millis(600);
         match crate::subproc::run_cmd_bounded(
-            "/usr/bin/nft",
+            nft,
             &["list", "table", Self::FAMILY, Self::TABLE_NAME],
             &[],
             deadline,
@@ -104,10 +112,10 @@ impl KernelNetfilter {
         let active = Self::is_active();
 
         let mut rule_count = 0;
-        if active {
+        if let (true, Some(nft)) = (active, Self::nft_path()) {
             let deadline = std::time::Instant::now() + Duration::from_millis(600);
             if let Some(stdout) = crate::subproc::run_cmd_bounded(
-                "/usr/bin/nft",
+                nft,
                 &["list", "table", Self::FAMILY, Self::TABLE_NAME],
                 &[],
                 deadline,
@@ -130,7 +138,7 @@ impl KernelNetfilter {
             is_supported: supported,
             is_active: active,
             table_name: Self::TABLE_NAME.to_string(),
-            blocked_ports: vec![53, 853],
+            blocked_ports: vec![53, 443, 853],
             active_rule_count: rule_count,
             summary,
         }
@@ -139,27 +147,31 @@ impl KernelNetfilter {
     /// Generates rules for double-sided strict egress lockdown (panic blackout)
     fn generate_blackout_ruleset() -> String {
         let mut rules = String::new();
-        rules.push_str(&format!("table {} {} {{\n", Self::FAMILY, Self::TABLE_NAME));
+        // Declare-then-delete makes `nft -f` replace the table atomically instead of
+        // appending a second copy of the chain on every apply.
+        rules.push_str(&format!("table {} {}\n", Self::FAMILY, Self::BLACKOUT_TABLE_NAME));
+        rules.push_str(&format!("delete table {} {}\n", Self::FAMILY, Self::BLACKOUT_TABLE_NAME));
+        rules.push_str(&format!("table {} {} {{\n", Self::FAMILY, Self::BLACKOUT_TABLE_NAME));
         rules.push_str("    chain output {\n");
         rules.push_str("        type filter hook output priority filter; policy accept;\n\n");
         rules.push_str("        # Double-sided strict egress lockdown (Panic Blackout)\n");
-        rules.push_str("        # Reject non-loopback DNS (53, 853) traffic globally\n");
-        rules.push_str("        iifname != \"lo\" tcp dport { 53, 853 } counter reject with tcp reset\n");
-        rules.push_str("        iifname != \"lo\" udp dport { 53, 853 } counter reject with icmp type admin-prohibited\n");
-        rules.push_str("        iifname != \"lo\" udp dport { 53, 853 } counter reject with icmpx type admin-prohibited\n");
+        rules.push_str("        # Reject non-loopback DNS (53, 853) traffic globally. Locally generated\n");
+        rules.push_str("        # packets have no input interface, so the loopback exemption must use oifname.\n");
+        rules.push_str("        oifname != \"lo\" tcp dport { 53, 853 } counter reject with tcp reset\n");
+        rules.push_str("        oifname != \"lo\" udp dport { 53, 853 } counter reject with icmpx type admin-prohibited\n");
         rules.push_str("    }\n");
         rules.push_str("}\n");
         rules
     }
 
     pub fn apply_network_blackout() -> bool {
-        if !Self::is_nft_available() {
+        let Some(nft) = Self::nft_path() else {
             return false;
-        }
+        };
         let rules = Self::generate_blackout_ruleset();
         let deadline = std::time::Instant::now() + Duration::from_millis(2000);
         
-        let mut child = match std::process::Command::new("/usr/bin/nft")
+        let mut child = match std::process::Command::new(nft)
             .arg("-f")
             .arg("-")
             .stdin(std::process::Stdio::piped())
@@ -189,13 +201,13 @@ impl KernelNetfilter {
     }
 
     pub fn clear_network_blackout() -> bool {
-        if !Self::is_nft_available() {
+        let Some(nft) = Self::nft_path() else {
             return false;
-        }
+        };
         let deadline = std::time::Instant::now() + Duration::from_millis(600);
         crate::subproc::run_cmd_bounded(
-            "/usr/bin/nft",
-            &["delete", "table", Self::FAMILY, Self::TABLE_NAME],
+            nft,
+            &["delete", "table", Self::FAMILY, Self::BLACKOUT_TABLE_NAME],
             &[],
             deadline,
             64 * 1024,
@@ -203,20 +215,20 @@ impl KernelNetfilter {
     }
 
     pub fn is_network_blackout_active() -> bool {
-        if !Self::is_nft_available() {
+        let Some(nft) = Self::nft_path() else {
             return false;
-        }
+        };
         let deadline = std::time::Instant::now() + Duration::from_millis(600);
         match crate::subproc::run_cmd_bounded(
-            "/usr/bin/nft",
-            &["list", "table", Self::FAMILY, Self::TABLE_NAME],
+            nft,
+            &["list", "table", Self::FAMILY, Self::BLACKOUT_TABLE_NAME],
             &[],
             deadline,
             64 * 1024,
         ) {
             Some(stdout) => {
                 let s = String::from_utf8_lossy(&stdout);
-                s.contains("admin-prohibited") && s.contains("iifname != \"lo\"")
+                s.contains("admin-prohibited") && s.contains("oifname != \"lo\"")
             }
             None => false,
         }

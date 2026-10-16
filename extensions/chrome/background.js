@@ -1,6 +1,17 @@
 // OmaBlock Chrome Bridge Service Worker (Manifest V3)
 // Real-time badge status and declarative ruleset management for Omarchy
 
+importScripts('whitelist.js');
+
+async function resyncAllowRules() {
+  try {
+    const store = await chrome.storage.local.get(['omablock_whitelist']);
+    await omablockSyncAllowRules(store.omablock_whitelist || []);
+  } catch (e) {
+    // Rules stay as they were; the popup resyncs on the next toggle
+  }
+}
+
 async function updateBadge(enabled) {
   try {
     if (enabled) {
@@ -17,6 +28,8 @@ async function updateBadge(enabled) {
 
 chrome.runtime.onInstalled.addListener(async () => {
   await updateBadge(true);
+  // Restore allow rules for whitelists saved before this version (or after an update)
+  await resyncAllowRules();
 });
 
 chrome.runtime.onStartup.addListener(async () => {

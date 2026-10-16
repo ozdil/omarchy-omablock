@@ -2,6 +2,8 @@
 name = "omablock-engine"
 version = "1.4.1"
 edition = "2021"
+# self_defense.rs uses slice::as_chunks
+rust-version = "1.88"
 authors = ["Ozan Özdil <ozan@pm.me>"]
 description = "Machine-Age Zero-Latency AdBlocker & Tracker Shield for Omarchy Linux"
 license = "MIT"

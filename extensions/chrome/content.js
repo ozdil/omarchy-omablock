@@ -5,6 +5,7 @@
   'use strict';
 
   const hostname = window.location.hostname.toLowerCase();
+  const isSite = (site) => hostname === site || hostname.endsWith('.' + site);
 
   // 1. Built-in essential service protections: Never touch critical productivity & video platforms
   const PROTECTED_DOMAINS = [
@@ -79,7 +80,7 @@
 
   // 4. Site-Specific First-Party Element Purge (e.g. DonanımHaber)
   function purgeFirstPartyAds() {
-    if (hostname.includes('donanimhaber.com')) {
+    if (isSite('donanimhaber.com')) {
       const targets = document.querySelectorAll(
         'a[href*="ad.donanimhaber.com"], a[href*="adserve.donanimhaber.com"], img[src*="adserve.donanimhaber.com"], div#rotator0, div#rotator1, div#rotator2, div#rotator3, div.reklam-alani, div[id^="dha-counter"]'
       );
@@ -92,7 +93,7 @@
           el.style.setProperty('pointer-events', 'none', 'important');
         }
       }
-    } else if (hostname.includes('haberler.com')) {
+    } else if (isSite('haberler.com')) {
       const targets = document.querySelectorAll('#sticky-ad-container, .ana_masthead_1056x250');
       for (let i = 0; i < targets.length; i++) {
         const el = targets[i];
@@ -108,21 +109,33 @@
   // Initial purge
   purgeFirstPartyAds();
 
-  // Low-overhead mutation observer for single-page dynamic insertions
-  if (document.body) {
-    const observer = new MutationObserver(() => {
+  // First-party purging only applies to a couple of sites; skip the observer elsewhere.
+  if (!isSite('donanimhaber.com') && !isSite('haberler.com')) {
+    return;
+  }
+
+  // Low-overhead mutation observer for single-page dynamic insertions,
+  // coalesced to at most one purge per animation frame.
+  let purgeScheduled = false;
+  const schedulePurge = () => {
+    if (purgeScheduled) return;
+    purgeScheduled = true;
+    requestAnimationFrame(() => {
+      purgeScheduled = false;
       purgeFirstPartyAds();
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+  };
+  const startObserver = () => {
+    if (document.body) {
+      new MutationObserver(schedulePurge).observe(document.body, { childList: true, subtree: true });
+    }
+  };
+  if (document.body) {
+    startObserver();
   } else {
     document.addEventListener('DOMContentLoaded', () => {
       purgeFirstPartyAds();
-      if (document.body) {
-        const observer = new MutationObserver(() => {
-          purgeFirstPartyAds();
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-      }
+      startObserver();
     });
   }
 })();

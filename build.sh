@@ -10,26 +10,6 @@ fi
 DIR="$(cd "$(/usr/bin/dirname "$(/usr/bin/realpath "${BASH_SOURCE[0]}")")" && /usr/bin/pwd)"
 cd "$DIR"
 
-CARGO_BIN=""
-if [[ -x /usr/bin/cargo ]]; then
-    CARGO_BIN="/usr/bin/cargo"
-elif [[ -x "${HOME}/.cargo/bin/cargo" ]]; then
-    CARGO_BIN="${HOME}/.cargo/bin/cargo"
-else
-    echo "Error: cargo binary not found" >&2
-    exit 1
-fi
-
-echo "Building omablock-engine from source..."
-TMP_BUILD_DIR="$(/usr/bin/mktemp -d -t omablock-build.XXXXXX)"
-cleanup() {
-    /usr/bin/rm -rf "${TMP_BUILD_DIR}"
-}
-trap cleanup EXIT
-
-"${CARGO_BIN}" build --release --locked --target-dir "${TMP_BUILD_DIR}"
-/usr/bin/install -m 755 "${TMP_BUILD_DIR}/release/omablock-engine" "${DIR}/omablock-engine"
-
 # User state directory and installation manifest
 STATE_DIR="${HOME}/.local/state/omarchy/omablock"
 MANIFEST_FILE="${STATE_DIR}/install_manifest.json"
@@ -105,6 +85,28 @@ for bin_name in "${TARGET_BINARIES[@]}"; do
         fi
     fi
 done
+
+# Build only after the ownership checks pass, so a refused run neither needs a
+# toolchain nor overwrites ${DIR}/omablock-engine.
+CARGO_BIN=""
+if [[ -x /usr/bin/cargo ]]; then
+    CARGO_BIN="/usr/bin/cargo"
+elif [[ -x "${HOME}/.cargo/bin/cargo" ]]; then
+    CARGO_BIN="${HOME}/.cargo/bin/cargo"
+else
+    echo "Error: cargo binary not found" >&2
+    exit 1
+fi
+
+echo "Building omablock-engine from source..."
+TMP_BUILD_DIR="$(/usr/bin/mktemp -d -t omablock-build.XXXXXX)"
+cleanup() {
+    /usr/bin/rm -rf "${TMP_BUILD_DIR}"
+}
+trap cleanup EXIT
+
+"${CARGO_BIN}" build --release --locked --target-dir "${TMP_BUILD_DIR}"
+/usr/bin/install -m 755 "${TMP_BUILD_DIR}/release/omablock-engine" "${DIR}/omablock-engine"
 
 # Install user-facing binaries in ~/.local/bin
 /usr/bin/install -m 755 "${DIR}/omablock-engine" "${HOME}/.local/bin/omablock-engine"

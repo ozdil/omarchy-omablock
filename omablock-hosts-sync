@@ -46,7 +46,8 @@ def read_hosts_file(path: str = HOSTS_PATH) -> str:
             print(f"Fatal error: {path} exceeds maximum allowed size ({MAX_HOSTS_SIZE} bytes).", file=sys.stderr)
             sys.exit(1)
 
-        with open(fd, "r", encoding="utf-8", errors="ignore") as f:
+        # surrogateescape round-trips non-UTF-8 bytes instead of silently dropping them
+        with open(fd, "r", encoding="utf-8", errors="surrogateescape") as f:
             content = f.read(MAX_HOSTS_SIZE)
             leftover = f.read(1)
             if leftover:
@@ -65,9 +66,10 @@ BANNER_COMMENT = (
     "# Managed automatically by OmaBlock (ozdil.omablock). Do not edit inside this block."
 )
 
-# RFC 1035 strict domain regex: labels 1-63 chars starting/ending with alphanumeric, separated by single dots
+# RFC 1035 domain regex: labels 1-63 chars starting/ending with alphanumeric, separated by single dots.
+# Inner underscores are allowed (as in the engine's validate_domain) since real tracker hosts use them.
 DOMAIN_REGEX = re.compile(
-    r"^(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$"
+    r"^(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9_-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$"
 )
 
 
@@ -168,19 +170,34 @@ def flush_dns_cache():
 
 def strip_omablock_block(content: str) -> str:
     """Removes any existing OmaBlock block from hosts content."""
-    lines = content.splitlines()
+    # split("\n") instead of splitlines(): the latter also breaks on \x0c, \x1c, \u2028...
+    lines = content.split("\n")
     out = []
+    block = []
     in_block = False
 
     for line in lines:
         if BEGIN_MARKER in line:
             in_block = True
+            block = []
             continue
         if END_MARKER in line:
             in_block = False
+            block = []
             continue
-        if not in_block:
+        if in_block:
+            block.append(line)
+        else:
             out.append(line)
+
+    # A BEGIN without a matching END (e.g. a hand edit) must not swallow user
+    # entries that follow it: keep everything except our own sinkhole lines.
+    if in_block:
+        out.extend(
+            line for line in block
+            if line.strip() != BANNER_COMMENT
+            and not line.startswith(("0.0.0.0 ", ":: "))
+        )
 
     # Trim trailing empty lines
     while out and not out[-1].strip():
@@ -203,6 +220,20 @@ RESERVED_DOMAINS = {
 }
 
 
+def fsync_dir(path: str):
+    """Flushes a directory entry so a completed os.replace survives a crash."""
+    try:
+        dfd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    except OSError:
+        return
+    try:
+        os.fsync(dfd)
+    except OSError:
+        pass
+    finally:
+        os.close(dfd)
+
+
 def ensure_backup():
     """Creates a backup of /etc/hosts if it doesn't already exist, strictly without following symlinks."""
     if os.path.lexists(BACKUP_PATH):
@@ -222,7 +253,7 @@ def ensure_backup():
     try:
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(BACKUP_PATH, flags, 0o644)
-        with open(fd, "w", encoding="utf-8") as dst:
+        with open(fd, "w", encoding="utf-8", errors="surrogateescape") as dst:
             dst.write(content)
     except FileExistsError:
         pass
@@ -281,8 +312,15 @@ def apply_rules(rules_file: str):
     valid_domains = []
     MAX_DOMAINS = 500_000
     try:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        # O_NONBLOCK keeps a FIFO swapped in after the lstat check from hanging the helper;
+        # fstat on the opened fd is the check that actually counts.
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         fd = os.open(rules_file, flags)
+        fst = os.fstat(fd)
+        if not stat.S_ISREG(fst.st_mode) or fst.st_size > 50 * 1024 * 1024:
+            os.close(fd)
+            print(f"Security violation: Rules file '{rules_file}' changed during verification.", file=sys.stderr)
+            sys.exit(1)
         with open(fd, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
                 line = line.strip()
@@ -333,7 +371,7 @@ def apply_rules(rules_file: str):
     try:
         flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(TEMP_PATH, flags, 0o644)
-        with open(fd, "w", encoding="utf-8") as f:
+        with open(fd, "w", encoding="utf-8", errors="surrogateescape") as f:
             f.write(clean_hosts)
             if not clean_hosts.endswith("\n"):
                 f.write("\n")
@@ -344,10 +382,13 @@ def apply_rules(rules_file: str):
                 if d in DOH_DOMAINS:
                     f.write(f":: {d}\n")
             f.write(END_MARKER + "\n")
+            f.flush()
+            os.fsync(f.fileno())
         os.chmod(TEMP_PATH, 0o644)
 
         # Atomic swap
         os.replace(TEMP_PATH, HOSTS_PATH)
+        fsync_dir(os.path.dirname(HOSTS_PATH) or ".")
     except Exception as e:
         print(f"Fatal error: Failed to write or replace {HOSTS_PATH}: {e}", file=sys.stderr)
         if os.path.lexists(TEMP_PATH):
@@ -369,7 +410,11 @@ def apply_nftables_rules():
         return
 
     # Generate DoH/DoT drop table
+    # Declaring then deleting the table first makes `nft -f` replace it atomically;
+    # without this every apply appends a second copy of the chain rules.
     nft_script = """
+table inet omablock
+delete table inet omablock
 table inet omablock {
     set bad_ipv4 {
         type ipv4_addr;
@@ -417,6 +462,8 @@ def clear_nftables_rules():
 def clear_rules():
     """Removes OmaBlock rules from /etc/hosts and kernel Netfilter table."""
     clear_nftables_rules()
+    # Browser DoH policies are independent of the hosts block; always remove them.
+    clear_browser_doh_policy()
     if not os.path.lexists(HOSTS_PATH):
         return
 
@@ -439,11 +486,14 @@ def clear_rules():
     try:
         flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(TEMP_PATH, flags, 0o644)
-        with open(fd, "w", encoding="utf-8") as f:
+        with open(fd, "w", encoding="utf-8", errors="surrogateescape") as f:
             f.write(clean_hosts)
+            f.flush()
+            os.fsync(f.fileno())
         os.chmod(TEMP_PATH, 0o644)
 
         os.replace(TEMP_PATH, HOSTS_PATH)
+        fsync_dir(os.path.dirname(HOSTS_PATH) or ".")
     except Exception as e:
         print(f"Fatal error: Failed to clear OmaBlock rules from {HOSTS_PATH}: {e}", file=sys.stderr)
         if os.path.lexists(TEMP_PATH):
@@ -453,7 +503,6 @@ def clear_rules():
                 pass
         sys.exit(1)
 
-    clear_browser_doh_policy()
     flush_dns_cache()
     print("Cleared OmaBlock rules from /etc/hosts.")
 
@@ -481,6 +530,9 @@ def main():
         apply_rules(sys.argv[2])
         if "--with-kernel" in sys.argv:
             apply_nftables_rules()
+        else:
+            # Kernel enforcement was switched off: drop any table left from a previous apply.
+            clear_nftables_rules()
     else:
         print(f"Unknown command: {cmd}", file=sys.stderr)
         sys.exit(1)

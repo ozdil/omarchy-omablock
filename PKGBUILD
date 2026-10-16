@@ -7,7 +7,9 @@ arch=('x86_64')
 url="https://github.com/ozdil/omarchy-omablock"
 license=('MIT')
 depends=('glibc' 'gcc-libs' 'curl' 'python' 'polkit' 'quickshell')
+optdepends=('nftables: kernel-level DoH/DoT enforcement')
 makedepends=('cargo' 'rust')
+install=omablock.install
 
 build() {
     cd "${startdir}"
@@ -35,6 +37,8 @@ package() {
     install -Dm755 "omablock-status" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/omablock-status"
     install -Dm644 "manifest.json" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/manifest.json"
     install -Dm644 "Panel.qml" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/Panel.qml"
+    # Panel.qml resolves BoundedTextInput from its own directory
+    install -Dm644 "BoundedTextInput.qml" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/BoundedTextInput.qml"
 
     install -d "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/qml"
     cp -r qml/* "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/qml/"

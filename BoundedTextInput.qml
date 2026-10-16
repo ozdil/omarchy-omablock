@@ -14,6 +14,9 @@ TextEdit {
     property bool multiline: false
 
     signal accepted()
+    // TextEdit has no textEdited() signal (only TextInput does); declare it so
+    // insertCleanText() can emit it without a TypeError on every paste.
+    signal textEdited()
 
     function insertCleanText(raw) {
         if (readOnly)
@@ -65,6 +68,14 @@ TextEdit {
                 control.accepted();
                 return ;
             }
+        }
+        if (!control.multiline && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)) {
+            // Single-line field: let Tab move focus instead of inserting a tab character.
+            event.accepted = true;
+            var next = control.nextItemInFocusChain(event.key === Qt.Key_Tab);
+            if (next)
+                next.forceActiveFocus();
+            return ;
         }
         if (event.matches(StandardKey.Paste) || (event.modifiers & Qt.ControlModifier && (event.key === Qt.Key_V || event.key === Qt.Key_Insert)) || (event.modifiers & Qt.ShiftModifier && event.key === Qt.Key_Insert)) {
             event.accepted = true;

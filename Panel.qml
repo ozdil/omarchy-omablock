@@ -104,44 +104,59 @@ Panel {
     toastTimer.restart()
   }
 
+  // Quickshell ignores `running = true` on a Process that is still running,
+  // so engine actions are queued and run one at a time.
+  property var actionQueue: []
+  property bool pendingRefresh: false
+
   function refresh() {
-    if (!statusProc.running) {
+    if (statusProc.running) {
+      root.pendingRefresh = true
+    } else {
       statusProc.running = true
     }
   }
 
-  function setBlockingLevel(lvl) {
-    actionProc.command = [root.resolveEnginePath(), "--set-level", lvl]
+  function runAction(cmd) {
+    root.actionQueue.push(cmd)
+    if (!actionProc.running) root.startNextAction()
+  }
+
+  function startNextAction() {
+    if (root.actionQueue.length === 0) {
+      root.refresh()
+      return
+    }
+    actionProc.command = root.actionQueue.shift()
     actionProc.running = true
+  }
+
+  function setBlockingLevel(lvl) {
+    root.runAction([root.resolveEnginePath(), "--set-level", lvl])
     var label = lvl === "ultimate" ? "Ultimate (Anti-Popup)" : (lvl === "aggressive" ? "Aggressive" : "Standard")
     root.showToast("Blocking level: " + label)
   }
 
   function pauseShield(minutes) {
-    actionProc.command = [root.resolveEnginePath(), "--pause", String(minutes)]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--pause", String(minutes)])
     root.showToast("Shield paused for " + minutes + " minutes")
   }
 
   function resumeShield() {
-    actionProc.command = [root.resolveEnginePath(), "--resume"]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--resume"])
     root.showToast("Shield protection resumed")
   }
 
   function toggleDohGuard() {
-    actionProc.command = [root.resolveEnginePath(), "--toggle-doh-guard"]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--toggle-doh-guard"])
   }
 
   function toggleAi() {
-    actionProc.command = [root.resolveEnginePath(), "--toggle-ai"]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--toggle-ai"])
   }
 
   function toggleKernel() {
-    actionProc.command = [root.resolveEnginePath(), "--toggle-kernel"]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--toggle-kernel"])
   }
 
   function formatRemaining(secs) {
@@ -151,13 +166,11 @@ Panel {
   }
 
   function toggleMaster() {
-    actionProc.command = [root.resolveEnginePath(), "--toggle"]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--toggle"])
   }
 
   function toggleCategory(cat) {
-    actionProc.command = [root.resolveEnginePath(), "--toggle-category", cat]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--toggle-category", cat])
   }
 
   function runTest() {
@@ -176,36 +189,31 @@ Panel {
   }
 
   function flushDns() {
-    actionProc.command = [root.resolveEnginePath(), "--flush"]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--flush"])
     showToast("Flushed system DNS caches")
   }
 
   function addWhitelist(domain) {
     if (!domain) return
-    actionProc.command = [root.resolveEnginePath(), "--whitelist-add", domain]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--whitelist-add", domain])
     showToast("Whitelisted: " + domain)
   }
 
   function removeWhitelist(domain) {
     if (!domain) return
-    actionProc.command = [root.resolveEnginePath(), "--whitelist-remove", domain]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--whitelist-remove", domain])
     showToast("Removed from whitelist: " + domain)
   }
 
   function addBlacklist(domain) {
     if (!domain) return
-    actionProc.command = [root.resolveEnginePath(), "--blacklist-add", domain]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--blacklist-add", domain])
     showToast("Blocked: " + domain)
   }
 
   function removeBlacklist(domain) {
     if (!domain) return
-    actionProc.command = [root.resolveEnginePath(), "--blacklist-remove", domain]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--blacklist-remove", domain])
     showToast("Removed from blacklist: " + domain)
   }
 
@@ -273,13 +281,17 @@ Panel {
         } catch (e) {}
       }
     }
+    onExited: {
+      if (root.pendingRefresh) {
+        root.pendingRefresh = false
+        statusProc.running = true
+      }
+    }
   }
 
   Process {
     id: actionProc
-    onExited: {
-      root.refresh()
-    }
+    onExited: root.startNextAction()
   }
 
 
@@ -296,7 +308,7 @@ Panel {
           root.testSuccess = !!d.success
           root.testMessage = d.message || ""
           root.testLatency = d.avg_latency_ms || 0.0
-          root.showToast(d.success ? "Shield Verified (0.00ms)" : "Verification alert")
+          root.showToast(d.success ? ("Shield Verified (" + Number(root.testLatency).toFixed(2) + "ms)") : "Verification alert")
         } catch (e) {}
         root.refresh()
       }
@@ -305,9 +317,16 @@ Panel {
 
   Process {
     id: updateProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        // The engine exits 0 even when the download fails; trust its summary line.
+        var ok = String(text || "").indexOf("Success: true") !== -1
+        root.showToast(ok ? "Blocklists updated successfully" : "Blocklist update failed")
+      }
+    }
     onExited: {
       root.isUpdating = false
-      root.showToast("Blocklists updated successfully")
       root.refresh()
     }
   }
@@ -357,6 +376,7 @@ Panel {
   }
 
   Component.onDestruction: {
+    root.actionQueue = []
     if (statusProc.running) statusProc.running = false
     if (actionProc.running) actionProc.running = false
     if (testProc.running) testProc.running = false
@@ -1830,7 +1850,7 @@ Panel {
         Text {
           textFormat: Text.PlainText
           anchors.horizontalCenter: parent.horizontalCenter
-          text: "OmaBlock v1.0 • Updated: " + root.lastUpdated
+          text: "OmaBlock v" + root.pluginVersion + " • Updated: " + root.lastUpdated
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption - 2
           color: root.textSecondary

@@ -458,22 +458,29 @@ pub fn get_now_unix() -> u64 {
         .unwrap_or(0)
 }
 
-fn check_pause_expiry(cfg: &mut OmaBlockConfig, rules: &ParsedRules) -> bool {
-    if let Some(until) = cfg.paused_until {
-        let now = get_now_unix();
-        if now >= until {
+/// Pure state transition: re-enables the shield when the pause deadline has passed.
+fn expire_pause_if_due(cfg: &mut OmaBlockConfig, now: u64) -> bool {
+    match cfg.paused_until {
+        Some(until) if now >= until => {
             cfg.paused_until = None;
             cfg.enabled = true;
-            save_config(cfg);
-            let count = sync_system_hosts(cfg, rules);
-            send_notification(
-                "OmaBlock Shield: REACTIVATED",
-                &format!("Pause period ended. {} rules restored.", count),
-            );
-            return true;
+            true
         }
+        _ => false,
     }
-    false
+}
+
+fn check_pause_expiry(cfg: &mut OmaBlockConfig, rules: &ParsedRules) -> bool {
+    if !expire_pause_if_due(cfg, get_now_unix()) {
+        return false;
+    }
+    save_config(cfg);
+    let count = sync_system_hosts(cfg, rules);
+    send_notification(
+        "OmaBlock Shield: REACTIVATED",
+        &format!("Pause period ended. {} rules restored.", count),
+    );
+    true
 }
 
 fn get_state_dir() -> PathBuf {
@@ -1144,7 +1151,10 @@ fn main() {
                     "malware" => cfg.categories.malware = !cfg.categories.malware,
                     "social" => cfg.categories.social = !cfg.categories.social,
                     "popups" | "popup" => cfg.categories.popups = !cfg.categories.popups,
-                    _ => eprintln!("Unknown category: {}", cat),
+                    _ => {
+                        eprintln!("Unknown category: {}", cat);
+                        std::process::exit(2);
+                    }
                 }
                 save_config(&cfg);
                 if cfg.enabled {
@@ -1170,13 +1180,15 @@ fn main() {
                     }
                     Err(e) => {
                         eprintln!("Invalid domain: {}", e);
+                        std::process::exit(2);
                     }
                 }
             }
         }
         "--whitelist-remove" => {
             if args.len() > 2 {
-                let domain = args[2].to_lowercase().trim().to_string();
+                // Same normalisation as validate_domain so "Example.com." matches the stored entry
+                let domain = args[2].trim().trim_end_matches('.').to_lowercase();
                 cfg.whitelist.retain(|d| d != &domain);
                 save_config(&cfg);
                 if cfg.enabled {
@@ -1202,13 +1214,15 @@ fn main() {
                     }
                     Err(e) => {
                         eprintln!("Invalid domain: {}", e);
+                        std::process::exit(2);
                     }
                 }
             }
         }
         "--blacklist-remove" => {
             if args.len() > 2 {
-                let domain = args[2].to_lowercase().trim().to_string();
+                // Same normalisation as validate_domain so "Example.com." matches the stored entry
+                let domain = args[2].trim().trim_end_matches('.').to_lowercase();
                 cfg.blacklist.retain(|d| d != &domain);
                 save_config(&cfg);
                 if cfg.enabled {
@@ -1226,6 +1240,9 @@ fn main() {
         "--update" => {
             let ok = update_blocklists_online(&mut cfg, &mut rules);
             println!("Update finished. Success: {}", ok);
+            if !ok {
+                std::process::exit(1);
+            }
         }
         "--flush" => {
             flush_dns_cache();
@@ -1548,19 +1565,16 @@ mod tests {
         cfg.paused_until = Some(now + 300);
         cfg.enabled = false;
 
-        let parsed = ParsedRules {
-            all_rules: HashMap::new(),
-            category_counts: HashMap::new(),
-        };
-
+        // Uses the pure transition only: check_pause_expiry would write the real
+        // config in $HOME and run the privileged hosts sync.
         // Not yet expired
-        assert!(!check_pause_expiry(&mut cfg, &parsed));
+        assert!(!expire_pause_if_due(&mut cfg, now));
         assert!(!cfg.enabled);
         assert!(cfg.paused_until.is_some());
 
         // Simulate expired
         cfg.paused_until = Some(now.saturating_sub(10));
-        assert!(check_pause_expiry(&mut cfg, &parsed));
+        assert!(expire_pause_if_due(&mut cfg, now));
         assert!(cfg.enabled);
         assert!(cfg.paused_until.is_none());
     }

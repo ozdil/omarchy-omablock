@@ -5,6 +5,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const activeDomainEl = document.getElementById('activeDomain');
   const statusBadgeEl = document.getElementById('statusBadge');
   const toggleBtn = document.getElementById('toggleBtn');
+  const versionBadgeEl = document.getElementById('versionBadge');
+  if (versionBadgeEl) {
+    versionBadgeEl.textContent = 'v' + chrome.runtime.getManifest().version;
+  }
 
   // Query active tab
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -30,7 +34,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Check store
   const store = await chrome.storage.local.get(['omablock_whitelist']);
   const whitelist = store.omablock_whitelist || [];
-  let isWhitelisted = whitelist.includes(domain);
+  // Same suffix match as content.js, so a parent-domain entry shows as whitelisted here too
+  let isWhitelisted = whitelist.some(wl => omablockMatchesHost(domain, wl));
 
   function updateView() {
     if (isWhitelisted) {
@@ -47,23 +52,32 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateView();
 
   toggleBtn.addEventListener('click', async () => {
-    const freshStore = await chrome.storage.local.get(['omablock_whitelist']);
-    let list = freshStore.omablock_whitelist || [];
+    toggleBtn.disabled = true;
+    try {
+      const freshStore = await chrome.storage.local.get(['omablock_whitelist']);
+      let list = freshStore.omablock_whitelist || [];
 
-    if (isWhitelisted) {
-      list = list.filter(d => d !== domain);
-      isWhitelisted = false;
-    } else {
-      if (!list.includes(domain)) {
-        list.push(domain);
+      if (isWhitelisted) {
+        // Drop every entry covering this host (e.g. both www.example.com and example.com)
+        list = list.filter(d => !omablockMatchesHost(domain, d));
+        isWhitelisted = false;
+      } else {
+        if (!list.includes(domain)) {
+          list.push(domain);
+        }
+        isWhitelisted = true;
       }
-      isWhitelisted = true;
+
+      await chrome.storage.local.set({ omablock_whitelist: list });
+      await omablockSyncAllowRules(list);
+      updateView();
+
+      // Reload tab to apply changes
+      chrome.tabs.reload(tab.id);
+    } catch (e) {
+      statusBadgeEl.textContent = 'Hata';
+    } finally {
+      toggleBtn.disabled = false;
     }
-
-    await chrome.storage.local.set({ omablock_whitelist: list });
-    updateView();
-
-    // Reload tab to apply changes
-    chrome.tabs.reload(tab.id);
   });
 });

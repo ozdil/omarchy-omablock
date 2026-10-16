@@ -21,6 +21,31 @@ loader.exec_module(omablock_sync)
 
 
 class TestOmaBlockSyncHelper(unittest.TestCase):
+    def setUp(self):
+        # Never let a test touch the real /etc/hosts, browser policy dirs, resolvectl or nft,
+        # even when the suite runs as root (CI containers, sudo).
+        self._sandbox = tempfile.TemporaryDirectory()
+        sandbox = self._sandbox.name
+        self._saved = {
+            name: getattr(omablock_sync, name)
+            for name in (
+                "HOSTS_PATH", "BACKUP_PATH", "TEMP_PATH", "POLICY_DIRS",
+                "flush_dns_cache", "apply_nftables_rules", "clear_nftables_rules",
+            )
+        }
+        omablock_sync.HOSTS_PATH = os.path.join(sandbox, "hosts")
+        omablock_sync.BACKUP_PATH = os.path.join(sandbox, "hosts.omablock.bak")
+        omablock_sync.TEMP_PATH = os.path.join(sandbox, "hosts.omablock.tmp")
+        omablock_sync.POLICY_DIRS = [os.path.join(sandbox, "policies")]
+        omablock_sync.flush_dns_cache = lambda: None
+        omablock_sync.apply_nftables_rules = lambda: None
+        omablock_sync.clear_nftables_rules = lambda: None
+
+    def tearDown(self):
+        for name, value in self._saved.items():
+            setattr(omablock_sync, name, value)
+        self._sandbox.cleanup()
+
     def test_domain_regex_validation(self):
         valid = [
             "google.com",
@@ -133,7 +158,10 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
 
             os.unlink(mock_hosts)
 
-            # Case 2: mock_hosts exists as unreadable / error on open
+            # Case 2: mock_hosts exists as unreadable / error on open.
+            # root ignores mode 000, so this case only means something for normal users.
+            if os.geteuid() == 0:
+                return
             with open(mock_hosts, "w") as f:
                 f.write("127.0.0.1 localhost\n")
             os.chmod(mock_hosts, 0o000)
@@ -199,6 +227,47 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
             os.mkdir(sub_dir)
             with self.assertRaises(SystemExit):
                 omablock_sync.read_hosts_file(sub_dir)
+
+
+    def test_strip_keeps_user_entries_after_unterminated_block(self):
+        original = (
+            "127.0.0.1 localhost\n"
+            "# --- BEGIN OMABLOCK MANAGED RULES ---\n"
+            "# Managed automatically by OmaBlock (ozdil.omablock). Do not edit inside this block.\n"
+            "0.0.0.0 evil.com\n"
+            "10.0.0.5 nas.home\n"
+        )
+        cleaned = omablock_sync.strip_omablock_block(original)
+        self.assertIn("10.0.0.5 nas.home", cleaned)
+        self.assertNotIn("evil.com", cleaned)
+        self.assertNotIn("OMABLOCK MANAGED RULES", cleaned)
+
+    def test_apply_preserves_non_utf8_bytes(self):
+        with open(omablock_sync.HOSTS_PATH, "wb") as f:
+            f.write(b"127.0.0.1 localhost # caf\xe9\n")
+        rules_file = os.path.join(self._sandbox.name, "rules.txt")
+        with open(rules_file, "w") as f:
+            f.write("0.0.0.0 badtracker.com\n")
+        omablock_sync.apply_rules(rules_file)
+        with open(omablock_sync.HOSTS_PATH, "rb") as f:
+            data = f.read()
+        self.assertIn(b"caf\xe9", data)
+        self.assertIn(b"0.0.0.0 badtracker.com", data)
+
+    def test_clear_removes_policy_even_without_hosts_block(self):
+        pdir = omablock_sync.POLICY_DIRS[0]
+        omablock_sync.apply_browser_doh_policy()
+        target = os.path.join(pdir, omablock_sync.POLICY_FILENAME)
+        self.assertTrue(os.path.exists(target))
+        with open(omablock_sync.HOSTS_PATH, "w") as f:
+            f.write("127.0.0.1 localhost\n")
+        omablock_sync.clear_rules()
+        self.assertFalse(os.path.exists(target))
+
+    def test_nft_script_replaces_table(self):
+        import inspect
+        src = inspect.getsource(self._saved["apply_nftables_rules"])
+        self.assertIn("delete table inet omablock", src)
 
 
 if __name__ == "__main__":

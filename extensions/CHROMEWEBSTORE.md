@@ -23,7 +23,7 @@ Key Features:
 | :--- | :--- |
 | `declarativeNetRequest` | Required to block intrusive ad and tracker network requests directly in the browser network engine without reading user traffic. |
 | `storage` | Used locally on the device to cache user preferences and active shield toggle states. No external data transmission. |
-| `nativeMessaging` | Enables local communication with the host OmaBlock daemon on Omarchy Linux to synchronize protection status. |
+| `tabs` | Reads the active tab URL in the popup so the user can turn the shield off for that site. |
 | `<all_urls>` (Host Permission) | Essential to apply declarative network rules and cosmetic CSS filters across visited web pages to hide inline ad containers. |
 
 ---

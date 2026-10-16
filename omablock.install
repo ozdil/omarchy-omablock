@@ -1,0 +1,9 @@
+# pacman install hooks for omarchy-omablock
+
+pre_remove() {
+    # Remove the /etc/hosts sinkhole block, the nftables table and the browser
+    # DoH policies while the helper that owns them is still installed.
+    if [[ -x /usr/bin/omablock-hosts-sync ]]; then
+        /usr/bin/omablock-hosts-sync --clear || true
+    fi
+}

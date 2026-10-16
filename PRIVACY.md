@@ -16,7 +16,7 @@ We do not sell, rent, trade, or share any user data with any third parties, adve
 ## 4. Permissions Usage
 - `declarativeNetRequest`: Used exclusively to block known tracking and advertising network requests.
 - `storage`: Used solely to save local user toggle settings on the device.
-- `nativeMessaging`: Used strictly to communicate with the local host daemon on Omarchy Linux without network exposure.
+- `tabs`: Used only in the popup to read the active tab hostname for the per-site whitelist toggle. The hostname never leaves the browser.
 - `host_permissions` (`<all_urls>`): Used strictly to inject cosmetic CSS rules that remove empty ad placeholders on visited pages.
 
 ## 5. Contact
