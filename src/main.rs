@@ -516,6 +516,31 @@ fn load_config() -> OmaBlockConfig {
     default_cfg
 }
 
+/// Serialises load-modify-save cycles between concurrent engine invocations
+/// (panel polls, queued actions, a long-running --update). Released on drop/exit.
+fn acquire_config_lock() -> Option<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::io::AsRawFd;
+
+    let dir = get_state_dir();
+    let _ = secure_fs::ensure_state_dir(&dir);
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(dir.join("engine.lock"))
+        .ok()?;
+    // SAFETY: flock on a valid, owned file descriptor.
+    let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
+    if rc == 0 {
+        Some(file)
+    } else {
+        None
+    }
+}
+
 fn save_config(cfg: &OmaBlockConfig) {
     let path = get_config_path();
     if let Ok(json) = serde_json::to_string_pretty(cfg) {
@@ -548,6 +573,29 @@ fn get_sync_bin_path() -> &'static str {
     } else {
         "/usr/local/bin/omablock-hosts-sync"
     }
+}
+
+/// Runs omablock-hosts-sync as root: non-interactive sudo first, then pkexec (polkit prompt).
+/// The sudo deadline leaves room for a large apply (resolvectl + nft can each take
+/// up to 10 s in the helper), so a slow but authorised run is not retried through
+/// pkexec with a second password prompt.
+fn run_privileged_helper(args: &[&str], max_output: usize) -> Option<Vec<u8>> {
+    let sync_bin = get_sync_bin_path();
+    let mut sudo_args = vec!["-n", sync_bin];
+    sudo_args.extend_from_slice(args);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let res = subproc::run_cmd_bounded("sudo", &sudo_args, &[], deadline, max_output);
+    if res.is_some() || !std::path::Path::new("/usr/bin/pkexec").exists() {
+        return res;
+    }
+
+    let pairs = get_gui_env_pairs();
+    let gui_envs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let mut pk_args = vec![sync_bin];
+    pk_args.extend_from_slice(args);
+    // Includes the time the user needs to type a password in the polkit dialog
+    let pk_deadline = Instant::now() + Duration::from_secs(90);
+    subproc::run_cmd_bounded("/usr/bin/pkexec", &pk_args, &gui_envs, pk_deadline, max_output)
 }
 
 fn send_notification(summary: &str, body: &str) {
@@ -696,29 +744,8 @@ pub fn is_system_hosts_active_from_reader<R: BufRead>(reader: R) -> bool {
 }
 
 fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
-    let sync_bin = get_sync_bin_path();
-    let pairs = get_gui_env_pairs();
-    let gui_envs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
-
     if !cfg.enabled {
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let sudo_res = subproc::run_cmd_bounded(
-            "sudo",
-            &["-n", sync_bin, "--clear"],
-            &[],
-            deadline,
-            16384,
-        );
-        if sudo_res.is_none() && std::path::Path::new("/usr/bin/pkexec").exists() {
-            let pk_deadline = Instant::now() + Duration::from_secs(15);
-            let _ = subproc::run_cmd_bounded(
-                "/usr/bin/pkexec",
-                &[sync_bin, "--clear"],
-                &gui_envs,
-                pk_deadline,
-                16384,
-            );
-        }
+        let _ = run_privileged_helper(&["--clear"], 16384);
         return 0;
     }
 
@@ -813,33 +840,11 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
         None => return 0,
     };
 
-    let deadline = Instant::now() + Duration::from_secs(8);
-    let mut sudo_args = vec!["-n", sync_bin, "--apply", path_str];
+    let mut args = vec!["--apply", path_str];
     if cfg.kernel_enforcement {
-        sudo_args.push("--with-kernel");
+        args.push("--with-kernel");
     }
-    let mut res = subproc::run_cmd_bounded(
-        "sudo",
-        &sudo_args,
-        &[],
-        deadline,
-        32768,
-    );
-
-    if res.is_none() && std::path::Path::new("/usr/bin/pkexec").exists() {
-        let pk_deadline = Instant::now() + Duration::from_secs(20);
-        let mut pk_args = vec![sync_bin, "--apply", path_str];
-        if cfg.kernel_enforcement {
-            pk_args.push("--with-kernel");
-        }
-        res = subproc::run_cmd_bounded(
-            "/usr/bin/pkexec",
-            &pk_args,
-            &gui_envs,
-            pk_deadline,
-            32768,
-        );
-    }
+    let res = run_privileged_helper(&args, 32768);
 
     if res.is_some() {
         active_domains.len()
@@ -1026,6 +1031,10 @@ fn update_blocklists_online(cfg: &mut OmaBlockConfig, rules: &mut ParsedRules) -
             eprintln!("Warning: Failed to write cached rules: {}", e);
         }
 
+        // The download can take minutes; reload the config under the lock so changes
+        // made meanwhile (e.g. a whitelist entry added from the panel) are not overwritten.
+        let _lock = acquire_config_lock();
+        *cfg = load_config();
         let now_str = get_current_timestamp();
         cfg.last_updated = Some(now_str);
         save_config(cfg);
@@ -1049,9 +1058,24 @@ fn main() {
     let _ = crate::self_defense::enforce_anti_tamper();
     
     let args: Vec<String> = std::env::args().collect();
+    let command = args.get(1).map(String::as_str).unwrap_or("--status");
+    let is_status = matches!(command, "--status" | "--json");
+    // Status polls stay lock-free; long downloads lock only around their final save.
+    let _config_lock = if is_status || matches!(command, "--update" | "--startup") {
+        None
+    } else {
+        acquire_config_lock()
+    };
     let mut cfg = load_config();
     let mut rules = load_all_rules();
-    let _ = check_pause_expiry(&mut cfg, &rules);
+    if is_status && expire_pause_if_due(&mut cfg.clone(), get_now_unix()) {
+        // A status poll noticed the pause ended: take the lock and re-check on fresh state
+        let _lock = acquire_config_lock();
+        cfg = load_config();
+        let _ = check_pause_expiry(&mut cfg, &rules);
+    } else if !is_status {
+        let _ = check_pause_expiry(&mut cfg, &rules);
+    }
 
     if args.len() < 2 || args[1] == "--status" || args[1] == "--json" {
         let system_active = is_system_hosts_active();
@@ -1439,12 +1463,19 @@ fn main() {
             }
         }
         "--panic-blackout" | "panic-blackout" => {
-            let ok = kernel::KernelNetfilter::apply_network_blackout();
+            // nft needs root, so the blackout goes through the privileged helper
+            let ok = run_privileged_helper(&["--blackout-on"], 16384).is_some();
             println!("Panic blackout applied: {}", ok);
+            if !ok {
+                std::process::exit(1);
+            }
         }
         "--resume-network" | "resume-network" => {
-            let ok = kernel::KernelNetfilter::clear_network_blackout();
+            let ok = run_privileged_helper(&["--blackout-off"], 16384).is_some();
             println!("Network resumed: {}", ok);
+            if !ok {
+                std::process::exit(1);
+            }
         }
         "--toggle-usb-armor" | "toggle-usb-armor" => {
             let status = kernel::KernelNetfilter::toggle_usb_armor();

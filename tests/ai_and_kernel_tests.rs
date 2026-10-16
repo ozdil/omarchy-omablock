@@ -148,3 +148,26 @@ fn test_kernel_netfilter_ruleset_generation() {
     assert!(ruleset.contains("chain output"));
     assert!(ruleset.contains("reject with icmp type admin-prohibited"));
 }
+
+#[test]
+fn test_kernel_state_file_parsing() {
+    let dir = std::env::temp_dir().join(format!("omablock-state-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("kernel_state.json");
+
+    // Missing file: nothing active
+    let st = KernelNetfilter::read_state_from(&path);
+    assert!(!st.kernel_active && !st.blackout_active);
+
+    std::fs::write(&path, br#"{"nft_available": true, "kernel_active": true, "kernel_rule_count": 4, "blackout_active": false}"#).unwrap();
+    let st = KernelNetfilter::read_state_from(&path);
+    assert!(st.kernel_active);
+    assert_eq!(st.kernel_rule_count, 4);
+    assert!(!st.blackout_active);
+
+    // Garbage: treated as inactive instead of failing the status output
+    std::fs::write(&path, b"not json").unwrap();
+    assert!(!KernelNetfilter::read_state_from(&path).kernel_active);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

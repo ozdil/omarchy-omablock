@@ -29,7 +29,7 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
         self._saved = {
             name: getattr(omablock_sync, name)
             for name in (
-                "HOSTS_PATH", "BACKUP_PATH", "TEMP_PATH", "POLICY_DIRS",
+                "HOSTS_PATH", "BACKUP_PATH", "TEMP_PATH", "POLICY_DIRS", "KERNEL_STATE_DIR",
                 "flush_dns_cache", "apply_nftables_rules", "clear_nftables_rules",
             )
         }
@@ -37,6 +37,7 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
         omablock_sync.BACKUP_PATH = os.path.join(sandbox, "hosts.omablock.bak")
         omablock_sync.TEMP_PATH = os.path.join(sandbox, "hosts.omablock.tmp")
         omablock_sync.POLICY_DIRS = [os.path.join(sandbox, "policies")]
+        omablock_sync.KERNEL_STATE_DIR = os.path.join(sandbox, "run-omablock")
         omablock_sync.flush_dns_cache = lambda: None
         omablock_sync.apply_nftables_rules = lambda: None
         omablock_sync.clear_nftables_rules = lambda: None
@@ -268,6 +269,23 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
         import inspect
         src = inspect.getsource(self._saved["apply_nftables_rules"])
         self.assertIn("delete table inet omablock", src)
+
+    def test_kernel_state_file_written_for_unprivileged_engine(self):
+        import json
+        from unittest.mock import patch
+        with patch.object(omablock_sync.shutil, "which", return_value=None):
+            omablock_sync.write_kernel_state()
+        path = os.path.join(omablock_sync.KERNEL_STATE_DIR, omablock_sync.KERNEL_STATE_FILE)
+        with open(path) as f:
+            state = json.load(f)
+        self.assertEqual(state, {"nft_available": False, "kernel_active": False,
+                                 "kernel_rule_count": 0, "blackout_active": False})
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o644)
+
+    def test_blackout_script_exempts_loopback_by_output_interface(self):
+        self.assertIn('oifname != "lo"', omablock_sync.BLACKOUT_SCRIPT)
+        self.assertNotIn("iifname", omablock_sync.BLACKOUT_SCRIPT)
+        self.assertIn("delete table inet omablock_blackout", omablock_sync.BLACKOUT_SCRIPT)
 
 
 if __name__ == "__main__":

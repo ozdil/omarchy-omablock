@@ -81,16 +81,14 @@ fn test_ab_simulation_mode_b_privileged_helper_rule_processing() {
     let env = TestEnv::new("mode_b");
     let rules_file = env.path("active_hosts.txt");
 
-    let test_domains = vec![
-        "0.0.0.0 doubleclick.net",
+    let test_domains = ["0.0.0.0 doubleclick.net",
         "0.0.0.0 pagead2.googlesyndication.com",
         "0.0.0.0 telemetry.microsoft.com",
         "0.0.0.0 1dot1dot1dot1.cloudflare-dns.com",
         "# Comment line",
         "   ",
         "0.0.0.0 invalid..domain",
-        "0.0.0.0 -badstart.com",
-    ];
+        "0.0.0.0 -badstart.com"];
 
     let content = test_domains.join("\n");
     secure_fs::atomic_write_secure(&rules_file, content.as_bytes()).unwrap();

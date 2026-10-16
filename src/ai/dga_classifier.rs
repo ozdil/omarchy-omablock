@@ -139,7 +139,7 @@ impl DgaClassifier {
         }
         let has_cyrillic = domain.chars().any(|c| {
             let u = c as u32;
-            u >= 0x0400 && u <= 0x04FF
+            (0x0400..=0x04FF).contains(&u)
         });
         let has_latin = domain.chars().any(|c| c.is_ascii_alphabetic());
         
