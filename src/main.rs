@@ -1126,8 +1126,11 @@ fn main() {
             }
         });
 
-        // Determine if IDN homograph detection was ever triggered
-        let idn_detected = get_state_dir().join("idn_detected.state").exists();
+        // The alert stays on only while the look-alike domain AI protection flagged is still
+        // whitelisted, so removing it (or never having whitelisted one) clears the radar
+        let idn_detected = secure_fs::read_secure_file_bounded(&get_state_dir().join("idn_detected.state"), 512)
+            .map(|flagged| cfg.whitelist.iter().any(|d| d == flagged.trim()))
+            .unwrap_or(false);
 
         let output = StatusOutput {
             enabled: cfg.enabled,
@@ -1248,6 +1251,10 @@ fn main() {
                 let domain = args[2].trim().trim_end_matches('.').to_lowercase();
                 cfg.whitelist.retain(|d| d != &domain);
                 save_config(&cfg);
+                let idn_state = get_state_dir().join("idn_detected.state");
+                if secure_fs::read_secure_file_bounded(&idn_state, 512).is_ok_and(|f| f.trim() == domain) {
+                    let _ = std::fs::remove_file(&idn_state);
+                }
                 if cfg.enabled {
                     sync_system_hosts(&cfg, &rules);
                 }
@@ -1371,6 +1378,12 @@ fn main() {
             if !ok {
                 std::process::exit(1);
             }
+            // The restored file has no OmaBlock block; turn the shield off so the next
+            // action does not silently re-apply it and the status matches /etc/hosts
+            cfg.enabled = false;
+            cfg.paused_until = None;
+            save_config(&cfg);
+            println!("Protection disabled; run --enable to apply the blocklist again.");
         }
         "--expire-pause" => {
             // Run by the systemd user timer that --pause schedules. A no-op unless a pause
