@@ -53,7 +53,7 @@ Panel {
   property string toastMsg: ""
   property bool showAboutModal: false
   readonly property string manifestPath: Qt.resolvedUrl("manifest.json").toString().replace(/^file:\/\//, "")
-  readonly property string manifestFallbackPath: (Quickshell.env("HOME") || "/home/ozdil") + "/.config/omarchy/plugins/ozdil.omablock/manifest.json"
+  readonly property string manifestFallbackPath: (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/ozdil.omablock/manifest.json"
 
   property string pluginName: "OmaBlock"
   property string pluginVersion: "1.4.1"

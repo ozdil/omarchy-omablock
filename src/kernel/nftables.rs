@@ -141,8 +141,7 @@ impl KernelNetfilter {
     }
 
     fn get_usb_armor_state_path() -> std::path::PathBuf {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/ozdil".to_string());
-        let dir = std::path::PathBuf::from(home).join(".local/state/omarchy/omablock");
+        let dir = crate::secure_fs::home_dir().join(".local/state/omarchy/omablock");
         let _ = crate::secure_fs::ensure_state_dir(&dir);
         dir.join("usb_armor.state")
     }

@@ -1,11 +1,9 @@
-mod ai;
-mod kernel;
-mod secure_fs;
-mod self_defense;
-mod subproc;
+// The binary uses the library crate instead of compiling its own copy of every
+// module, so the code the tests cover is the code that ships.
+use omablock_engine::{kernel, secure_fs, self_defense, subproc, validate_domain};
 
-pub use ai::{AiClassification, AiRiskAssessment, DgaClassifier};
-pub use kernel::{KernelFilterStatus, KernelNetfilter};
+pub use omablock_engine::{AiClassification, AiRiskAssessment, DgaClassifier};
+pub use omablock_engine::{KernelFilterStatus, KernelNetfilter};
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -371,62 +369,6 @@ pub struct StatusOutput {
     pub idn_homograph_detected: bool,
 }
 
-/// Validates that a string is a legitimate RFC 1035 domain name without shell/hosts injection
-pub fn validate_domain(raw: &str) -> Result<String, String> {
-    let s = raw.trim().trim_end_matches('.').to_lowercase();
-    if s.is_empty() {
-        return Err("Domain cannot be empty".to_string());
-    }
-    if s.len() > 253 {
-        return Err("Domain exceeds maximum length of 253 characters".to_string());
-    }
-
-    let labels: Vec<&str> = s.split('.').collect();
-    if labels.len() < 2 {
-        return Err("Domain must contain at least one dot separating label and TLD".to_string());
-    }
-
-    let last_label = labels[labels.len() - 1];
-    if matches!(last_label, "local" | "localhost" | "lan" | "internal" | "arpa" | "test" | "invalid") {
-        return Err(format!("Domain belongs to reserved local/internal TLD: .{}", last_label));
-    }
-
-    let reserved_names = [
-        "localhost",
-        "broadcasthost",
-        "local",
-        "ip6-localhost",
-        "ip6-loopback",
-        "ip6-allnodes",
-        "ip6-allrouters",
-        "ip6-allhosts",
-        "0.0.0.0",
-        "255.255.255.255",
-    ];
-    if reserved_names.contains(&s.as_str()) {
-        return Err(format!("Domain is a reserved system hostname: {}", s));
-    }
-
-    for label in &labels {
-        if label.is_empty() {
-            return Err("Domain contains empty label (e.g. consecutive dots)".to_string());
-        }
-        if label.len() > 63 {
-            return Err("Domain label exceeds 63 characters".to_string());
-        }
-        if label.starts_with('-') || label.ends_with('-') {
-            return Err("Domain label cannot start or end with a hyphen".to_string());
-        }
-        for ch in label.chars() {
-            if !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_' {
-                return Err(format!("Domain contains invalid character: '{}'", ch));
-            }
-        }
-    }
-
-    Ok(s)
-}
-
 /// Generates a local timestamp string in pure Rust using POSIX localtime_r
 pub fn get_current_timestamp() -> String {
     #[cfg(unix)]
@@ -484,8 +426,7 @@ fn check_pause_expiry(cfg: &mut OmaBlockConfig, rules: &ParsedRules) -> bool {
 }
 
 fn get_state_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/ozdil".to_string());
-    let dir = PathBuf::from(home).join(".local/state/omarchy/omablock");
+    let dir = secure_fs::home_dir().join(".local/state/omarchy/omablock");
     let _ = secure_fs::ensure_state_dir(&dir);
     dir
 }
@@ -505,9 +446,25 @@ fn get_active_hosts_path() -> PathBuf {
 fn load_config() -> OmaBlockConfig {
     let path = get_config_path();
     if path.exists() {
-        if let Ok(data) = secure_fs::read_secure_file(&path) {
-            if let Ok(cfg) = serde_json::from_str::<OmaBlockConfig>(&data) {
-                return cfg;
+        match secure_fs::read_secure_file(&path) {
+            Ok(data) => match serde_json::from_str::<OmaBlockConfig>(&data) {
+                Ok(cfg) => return cfg,
+                Err(e) => {
+                    // Keep the user's whitelist/blacklist recoverable instead of silently
+                    // overwriting the file with defaults.
+                    let backup = path.with_file_name(format!("config.json.corrupt-{}", get_now_unix()));
+                    eprintln!(
+                        "Warning: config.json is invalid ({}); moved to {} and starting from defaults",
+                        e,
+                        backup.display()
+                    );
+                    let _ = fs::rename(&path, &backup);
+                }
+            },
+            Err(e) => {
+                // Unreadable (wrong owner, symlink, too large): do not overwrite it.
+                eprintln!("Warning: cannot read config.json securely ({}); using defaults without saving", e);
+                return OmaBlockConfig::default();
             }
         }
     }
@@ -715,15 +672,37 @@ fn load_all_rules() -> ParsedRules {
     }
 }
 
-fn is_system_hosts_active() -> bool {
-    let hosts_path = "/etc/hosts";
-    if let Ok(file) = File::open(hosts_path) {
-        let reader = BufReader::new(file);
-        return is_system_hosts_active_from_reader(reader);
+/// Number of IPv4 sinkhole entries OmaBlock currently has in /etc/hosts.
+fn count_system_hosts_rules() -> usize {
+    match File::open("/etc/hosts") {
+        Ok(file) => count_system_hosts_rules_from_reader(BufReader::new(file)),
+        Err(_) => 0,
     }
-    false
 }
 
+/// Counts what is actually enforced (categories, level, whitelist and blacklist already
+/// applied), unlike the size of the loaded rule set. The `::` DoH lines duplicate
+/// an IPv4 entry and are not counted twice.
+pub fn count_system_hosts_rules_from_reader<R: BufRead>(reader: R) -> usize {
+    let mut inside_block = false;
+    let mut count = 0;
+    for line in reader.lines().map_while(Result::ok) {
+        let trimmed = line.trim();
+        if trimmed.contains("# --- BEGIN OMABLOCK MANAGED RULES ---") {
+            inside_block = true;
+            continue;
+        }
+        if trimmed.contains("# --- END OMABLOCK MANAGED RULES ---") {
+            break;
+        }
+        if inside_block && trimmed.starts_with("0.0.0.0 ") {
+            count += 1;
+        }
+    }
+    count
+}
+
+#[cfg(test)]
 pub fn is_system_hosts_active_from_reader<R: BufRead>(reader: R) -> bool {
     let mut inside_block = false;
     let mut rule_count = 0;
@@ -981,7 +960,8 @@ fn update_blocklists_online(cfg: &mut OmaBlockConfig, rules: &mut ParsedRules) -
         let deadline = Instant::now() + Duration::from_secs(20);
         let status = subproc::run_cmd_bounded(
             "curl",
-            &["-sSL", "--max-time", "18", url, "-o", temp_str],
+            // Cap each list so a huge or hostile response cannot fill the disk
+            &["-sSL", "--max-time", "18", "--max-filesize", "52428800", url, "-o", temp_str],
             &[],
             deadline,
             4096,
@@ -1055,7 +1035,7 @@ fn update_blocklists_online(cfg: &mut OmaBlockConfig, rules: &mut ParsedRules) -
 }
 
 fn main() {
-    let _ = crate::self_defense::enforce_anti_tamper();
+    let _ = self_defense::enforce_anti_tamper();
     
     let args: Vec<String> = std::env::args().collect();
     let command = args.get(1).map(String::as_str).unwrap_or("--status");
@@ -1078,12 +1058,9 @@ fn main() {
     }
 
     if args.len() < 2 || args[1] == "--status" || args[1] == "--json" {
-        let system_active = is_system_hosts_active();
-        let active_count = if cfg.enabled && system_active {
-            rules.all_rules.len()
-        } else {
-            0
-        };
+        let enforced = count_system_hosts_rules();
+        let system_active = enforced > 0;
+        let active_count = if cfg.enabled { enforced } else { 0 };
 
         let now = get_now_unix();
         let pause_remaining = cfg.paused_until.and_then(|u| {
@@ -1118,7 +1095,7 @@ fn main() {
             kernel_status: kernel::KernelNetfilter::query_status(),
             network_blackout_active: kernel::KernelNetfilter::is_network_blackout_active(),
             usb_armor_enabled: kernel::KernelNetfilter::is_usb_armor_enabled(),
-            self_integrity_hash: crate::self_defense::calculate_self_exe_sha256().unwrap_or_default(),
+            self_integrity_hash: self_defense::calculate_self_exe_sha256().unwrap_or_default(),
             idn_homograph_detected: idn_detected,
         };
 
@@ -1454,7 +1431,7 @@ fn main() {
             println!("{}", ruleset);
         }
         "--verify-integrity" | "verify-integrity" => {
-            match crate::self_defense::calculate_self_exe_sha256() {
+            match self_defense::calculate_self_exe_sha256() {
                 Ok(hash) => {
                     println!("INTEGRITY_HASH: {}", hash);
                     println!("STATUS: OK (Verified)");
@@ -1618,6 +1595,13 @@ mod tests {
         let json = serde_json::to_string(&cfg).unwrap();
         let loaded: OmaBlockConfig = serde_json::from_str(&json).unwrap();
         assert!(loaded.doh_prevention);
+    }
+
+    #[test]
+    fn test_count_system_hosts_rules_reader() {
+        let hosts = "127.0.0.1 localhost\n# --- BEGIN OMABLOCK MANAGED RULES ---\n# banner\n0.0.0.0 a.com\n0.0.0.0 dns.google\n:: dns.google\n# --- END OMABLOCK MANAGED RULES ---\n0.0.0.0 user-entry.com\n";
+        assert_eq!(count_system_hosts_rules_from_reader(hosts.as_bytes()), 2);
+        assert_eq!(count_system_hosts_rules_from_reader("127.0.0.1 localhost\n".as_bytes()), 0);
     }
 
     #[test]

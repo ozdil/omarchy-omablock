@@ -171,3 +171,26 @@ fn test_kernel_state_file_parsing() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn test_dga_classifier_avoids_known_false_positives() {
+    let classifier = DgaClassifier::new();
+    // Plain IDNs, first-party brand CDNs and compound public suffixes are not phishing
+    for domain in [
+        "xn--mnchen-3ya.de",              // münchen.de
+        "xn--d1acpjx3f.xn--p1ai",         // яндекс.рф
+        "raw.githubusercontent.com",
+        "fonts.googleapis.com",
+        "bbc.co.uk",
+    ] {
+        let a = classifier.assess(domain);
+        assert!(!a.is_suspicious, "'{}' must not be flagged (score {}, {:?})", domain, a.risk_score, a.reasons);
+    }
+}
+
+#[test]
+fn test_punycode_decode() {
+    assert_eq!(DgaClassifier::punycode_decode("mnchen-3ya").as_deref(), Some("münchen"));
+    assert_eq!(DgaClassifier::punycode_decode("80ak6aa92e").as_deref(), Some("аррӏе"));
+    assert!(DgaClassifier::punycode_decode("!!").is_none());
+}
