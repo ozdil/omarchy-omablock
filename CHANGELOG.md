@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.1
+
+### Fixed
+
+- Google Play Console (and other Google consoles) could not save changes while the shield was on. Endpoints that sign-in and these consoles need, such as `ogads-pa.googleapis.com` and `play.google.com`, are never blocked now, whatever the upstream lists contain. An explicit blacklist entry still wins.
+- Standard mode no longer includes the HaGeZi Ultimate list, which also blocks first-party telemetry that sites depend on. It is now filed under telemetry, so only Aggressive and Ultimate use it. Run `omablock --update` once to re-sort an existing rule cache.
+
 ## 1.5.0
 
 ### Fixed

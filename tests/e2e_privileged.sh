@@ -38,6 +38,10 @@ grep -q '^10.0.0.5 nas.home$' /etc/hosts || fail "user entry lost on enable"
 [ "$(field "d['active_rules']")" = "$(sinks)" ] || fail "active_rules does not match /etc/hosts"
 echo "ok: enable ($(sinks) entries)"
 
+# The builtin list contains ogads-pa.googleapis.com; Google's consoles need it to save
+! grep -q ' ogads-pa\.googleapis\.com$' /etc/hosts || fail "essential Google endpoint blocked"
+echo "ok: essential domains stay reachable"
+
 run --whitelist-add doubleclick.net
 ! grep -q ' doubleclick\.net$' /etc/hosts || fail "whitelisted domain still blocked"
 echo "ok: whitelist"
