@@ -6,12 +6,17 @@ echo "=== OmaBlock User-Space Removal Script ==="
 STATE_DIR="${HOME}/.local/state/omarchy/omablock"
 MANIFEST_FILE="${STATE_DIR}/install_manifest.json"
 
-# Turn the shield off first so /etc/hosts, the nftables table and the browser
+# Turn the shield and panic blackout off first so /etc/hosts, the nftables tables and the browser
 # DoH policies are restored while the engine and helper are still installed.
 for engine in "${HOME}/.local/bin/omablock-engine" /usr/bin/omablock-engine; do
     if [[ -x "${engine}" && ! -L "${engine}" ]]; then
         echo "Disabling OmaBlock shield and restoring system DNS..."
         "${engine}" --disable || echo "Warning: could not disable the shield; run 'omablock-hosts-sync --clear' as root." >&2
+        # --disable only clears the inet omablock table; panic blackout lives in its own table.
+        if "${engine}" --json 2>/dev/null | /usr/bin/grep -Eq '"network_blackout_active": *true'; then
+            echo "Lifting panic blackout..."
+            "${engine}" --resume-network || echo "Warning: could not lift panic blackout; run 'omablock-hosts-sync --blackout-off' as root." >&2
+        fi
         break
     fi
 done

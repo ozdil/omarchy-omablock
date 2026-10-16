@@ -468,9 +468,10 @@ fn load_config() -> OmaBlockConfig {
                 // Unreadable (wrong owner, symlink, too large): do not overwrite it.
                 // The error text (owner UIDs) is not echoed to the log.
                 eprintln!(
-                    "Warning: cannot read {} securely (wrong owner, symlink or too large); using defaults without saving",
+                    "Warning: cannot read {} securely (wrong owner, symlink, too large or not UTF-8); using defaults without saving",
                     path.display()
                 );
+                CONFIG_UNREADABLE.store(true, std::sync::atomic::Ordering::Relaxed);
                 return OmaBlockConfig::default();
             }
         }
@@ -562,9 +563,6 @@ fn ai_review_whitelist_candidate(cfg: &OmaBlockConfig, domain: &str) {
         return;
     }
     let assessment = DgaClassifier::new().assess(domain);
-    if DgaClassifier::detect_idn_homograph(domain) {
-        let _ = secure_fs::atomic_write_secure(&get_state_dir().join("idn_detected.state"), domain.as_bytes());
-    }
     if assessment.is_suspicious && assessment.classification == AiClassification::PhishingTyposquat {
         eprintln!(
             "Warning: '{}' looks like a phishing/typosquat domain (risk {:.2}): {}",
@@ -579,7 +577,23 @@ fn ai_review_whitelist_candidate(cfg: &OmaBlockConfig, domain: &str) {
     }
 }
 
+/// Set when config.json exists but could not be read. The defaults returned in that
+/// case must never be saved over the file or applied to /etc/hosts, or the user's
+/// whitelist and blacklist would be lost.
+static CONFIG_UNREADABLE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn refuse_if_config_unreadable() {
+    if CONFIG_UNREADABLE.load(std::sync::atomic::Ordering::Relaxed) {
+        eprintln!(
+            "Error: {} could not be read, so no changes were made. Fix its owner or contents, or move it away to start from defaults.",
+            get_config_path().display()
+        );
+        std::process::exit(1);
+    }
+}
+
 fn save_config(cfg: &OmaBlockConfig) {
+    refuse_if_config_unreadable();
     let path = get_config_path();
     if let Ok(json) = serde_json::to_string_pretty(cfg) {
         if let Err(e) = secure_fs::atomic_write_secure(&path, json.as_bytes()) {
@@ -788,6 +802,7 @@ fn exit_privileged_failure() -> ! {
 }
 
 fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
+    refuse_if_config_unreadable();
     if !cfg.enabled {
         if run_privileged_helper(&["--clear"], 16384).is_none() {
             SYNC_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -1126,6 +1141,12 @@ fn main() {
         let _lock = acquire_config_lock();
         cfg = load_config();
         let _ = check_pause_expiry(&mut cfg, &rules);
+    } else if matches!(command, "--update" | "--startup") {
+        // These run without the command-wide lock (downloads can take minutes), so the
+        // pause check and its save happen under a short lock on freshly loaded state
+        let _lock = acquire_config_lock();
+        cfg = load_config();
+        let _ = check_pause_expiry(&mut cfg, &rules);
     } else if !is_status {
         let _ = check_pause_expiry(&mut cfg, &rules);
     }
@@ -1144,11 +1165,9 @@ fn main() {
             }
         });
 
-        // The alert stays on only while the look-alike domain AI protection flagged is still
-        // whitelisted, so removing it (or never having whitelisted one) clears the radar
-        let idn_detected = secure_fs::read_secure_file_bounded(&get_state_dir().join("idn_detected.state"), 512)
-            .map(|flagged| cfg.whitelist.iter().any(|d| d == flagged.trim()))
-            .unwrap_or(false);
+        // Derived from the whitelist itself, so the alert stays on while any look-alike
+        // domain is still whitelisted and clears once the last one is removed
+        let idn_detected = cfg.ai_protection && cfg.whitelist.iter().any(|d| DgaClassifier::detect_idn_homograph(d));
 
         let output = StatusOutput {
             enabled: cfg.enabled,
@@ -1269,10 +1288,8 @@ fn main() {
                 let domain = args[2].trim().trim_end_matches('.').to_lowercase();
                 cfg.whitelist.retain(|d| d != &domain);
                 save_config(&cfg);
-                let idn_state = get_state_dir().join("idn_detected.state");
-                if secure_fs::read_secure_file_bounded(&idn_state, 512).is_ok_and(|f| f.trim() == domain) {
-                    let _ = std::fs::remove_file(&idn_state);
-                }
+                // Older versions kept the IDN alert in a state file; it is now derived from the whitelist
+                let _ = std::fs::remove_file(get_state_dir().join("idn_detected.state"));
                 if cfg.enabled {
                     sync_system_hosts(&cfg, &rules);
                 }
@@ -1356,9 +1373,15 @@ fn main() {
         }
         "--startup" => {
             println!("OmaBlock startup health check and optimization starting...");
-            if cfg.enabled {
-                let synced = sync_system_hosts(&cfg, &rules);
-                println!("System hosts shield verified and synced ({} rules active).", synced);
+            {
+                // Apply the saved state, not the one read at process start: a --disable
+                // run while the rules were loading must not be undone here
+                let _lock = acquire_config_lock();
+                cfg = load_config();
+                if cfg.enabled {
+                    let synced = sync_system_hosts(&cfg, &rules);
+                    println!("System hosts shield verified and synced ({} rules active).", synced);
+                }
             }
             if cfg.auto_update {
                 println!("Auto-update on startup is active. Fetching latest rules...");
@@ -1743,6 +1766,10 @@ mod tests {
         let hosts = "127.0.0.1 localhost\n# --- BEGIN OMABLOCK MANAGED RULES ---\n# banner\n0.0.0.0 a.com\n0.0.0.0 dns.google\n:: dns.google\n# --- END OMABLOCK MANAGED RULES ---\n0.0.0.0 user-entry.com\n";
         assert_eq!(count_managed_hosts_rules(hosts.as_bytes()), 2);
         assert_eq!(count_managed_hosts_rules("127.0.0.1 localhost\n".as_bytes()), 0);
+        // A non-UTF-8 comment before the block must not hide the managed entries
+        let mut latin1 = b"# caf\xe9\n".to_vec();
+        latin1.extend_from_slice(hosts.as_bytes());
+        assert_eq!(count_managed_hosts_rules(&latin1[..]), 2);
     }
 
     #[test]

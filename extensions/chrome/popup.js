@@ -79,7 +79,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       await chrome.storage.local.set({ omablock_whitelist: list });
-      await omablockSyncAllowRules(list);
+      // The service worker applies the allow rules from storage; wait for it before reloading
+      const res = await chrome.runtime.sendMessage({ type: 'omablock-sync-allow-rules' });
+      if (!res || !res.ok) {
+        throw new Error('allow rules not updated');
+      }
       updateView();
 
       // Reload tab to apply changes

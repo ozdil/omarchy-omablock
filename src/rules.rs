@@ -41,7 +41,10 @@ pub fn parse_rules_content(content: &str, all_rules: &mut HashMap<String, String
 pub fn count_managed_hosts_rules<R: BufRead>(reader: R) -> usize {
     let mut inside_block = false;
     let mut count = 0;
-    for line in reader.lines().map_while(Result::ok) {
+    // Split on raw bytes: the helper preserves non-UTF-8 bytes in /etc/hosts, and
+    // `lines()` would stop at the first such line before reaching the block.
+    for line in reader.split(b'\n').map_while(Result::ok) {
+        let line = String::from_utf8_lossy(&line);
         let trimmed = line.trim();
         if trimmed.contains(HOSTS_BEGIN_MARKER) {
             inside_block = true;

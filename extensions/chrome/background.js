@@ -3,13 +3,23 @@
 
 importScripts('whitelist.js');
 
-async function resyncAllowRules() {
-  try {
-    const store = await chrome.storage.local.get(['omablock_whitelist']);
-    await omablockSyncAllowRules(store.omablock_whitelist || []);
-  } catch (e) {
-    // Rules stay as they were; the popup resyncs on the next toggle
-  }
+// The service worker owns the allow rules: it applies the saved whitelist whenever it
+// changes and on every start, so a popup closed mid-toggle cannot leave them out of date.
+// Runs are chained so two quick toggles never interleave getDynamicRules/updateDynamicRules.
+let allowRulesSync = Promise.resolve();
+
+function resyncAllowRules() {
+  allowRulesSync = allowRulesSync.then(async () => {
+    try {
+      const store = await chrome.storage.local.get(['omablock_whitelist']);
+      await omablockSyncAllowRules(store.omablock_whitelist || []);
+      return true;
+    } catch (e) {
+      // Rules stay as they were; the next change or browser start retries
+      return false;
+    }
+  });
+  return allowRulesSync;
 }
 
 async function getWhitelist() {
@@ -63,7 +73,10 @@ chrome.runtime.onInstalled.addListener(async () => {
   await updateAllBadges();
 });
 
-chrome.runtime.onStartup.addListener(updateAllBadges);
+chrome.runtime.onStartup.addListener(async () => {
+  await resyncAllowRules();
+  await updateAllBadges();
+});
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.url || changeInfo.status === 'loading') {
@@ -73,6 +86,16 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.omablock_whitelist) {
+    resyncAllowRules();
     updateAllBadges();
   }
+});
+
+// The popup waits on this so it reloads the tab only after the rules are in place
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && msg.type === 'omablock-sync-allow-rules') {
+    resyncAllowRules().then(ok => sendResponse({ ok }));
+    return true;
+  }
+  return false;
 });
