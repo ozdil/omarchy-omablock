@@ -7,6 +7,41 @@ use std::io::BufRead;
 pub const HOSTS_BEGIN_MARKER: &str = "# --- BEGIN OMABLOCK MANAGED RULES ---";
 pub const HOSTS_END_MARKER: &str = "# --- END OMABLOCK MANAGED RULES ---";
 
+/// Endpoints that sign-in, account switching and Google's web consoles (Play Console,
+/// Firebase, Cloud) need to save changes. Aggressive upstream lists include some of them
+/// as telemetry, which makes those consoles fail silently, so they are never written to
+/// /etc/hosts whatever the lists say. An explicit user blacklist entry still wins.
+pub const ESSENTIAL_DOMAINS: &[&str] = &[
+    "accounts.google.com",
+    "apis.google.com",
+    "ogs.google.com",
+    "play.google.com",
+    "www.google.com",
+    "ogads-pa.clients6.google.com",
+    "ogads-pa.googleapis.com",
+    "peoplestackwebexperiments-pa.clients6.google.com",
+    "playconsole-pa.clients6.google.com",
+    "playconsole-pa.googleapis.com",
+    "play-fe.googleapis.com",
+    "androidpublisher.googleapis.com",
+    "content.googleapis.com",
+    "www.googleapis.com",
+    "oauth2.googleapis.com",
+    "firebase.googleapis.com",
+    "firebaseinstallations.googleapis.com",
+    "firebaseremoteconfig.googleapis.com",
+    "console.firebase.google.com",
+    "console.cloud.google.com",
+    "www.gstatic.com",
+    "ssl.gstatic.com",
+    "fonts.googleapis.com",
+    "fonts.gstatic.com",
+];
+
+pub fn is_essential_domain(domain: &str) -> bool {
+    ESSENTIAL_DOMAINS.contains(&domain)
+}
+
 /// Merges `category domain` (or bare `domain`, filed under ads) lines into `all_rules`.
 /// Comments, blanks and entries that fail `validate_domain` are skipped, so a tampered
 /// cache cannot smuggle hosts-file syntax into the generated block. Returns how many
@@ -58,4 +93,18 @@ pub fn count_managed_hosts_rules<R: BufRead>(reader: R) -> usize {
         }
     }
     count
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn essential_domains_are_valid_and_normalised() {
+        for d in ESSENTIAL_DOMAINS {
+            assert_eq!(validate_domain(d).as_deref(), Ok(*d), "{d}");
+        }
+        assert!(is_essential_domain("play.google.com"));
+        assert!(!is_essential_domain("ads.google.com"));
+    }
 }

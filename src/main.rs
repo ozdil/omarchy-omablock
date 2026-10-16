@@ -1,6 +1,6 @@
 // The binary uses the library crate instead of compiling its own copy of every
 // module, so the code the tests cover is the code that ships.
-use omablock_engine::rules::{count_managed_hosts_rules, parse_rules_content};
+use omablock_engine::rules::{count_managed_hosts_rules, is_essential_domain, parse_rules_content};
 use omablock_engine::{kernel, secure_fs, self_defense, subproc, validate_domain};
 
 pub use omablock_engine::{AiClassification, AiRiskAssessment, DgaClassifier};
@@ -834,7 +834,7 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
             },
         };
 
-        if is_cat_enabled {
+        if is_cat_enabled && !is_essential_domain(domain) {
             let mut whitelisted = whitelist_set.contains(domain);
             if !whitelisted {
                 for suffix in &wl_suffixes {
@@ -1028,7 +1028,9 @@ fn update_blocklists_online(cfg: &mut OmaBlockConfig, rules: &mut ParsedRules) -
         ("https://v.firebog.net/hosts/Admiral.txt", "popups"),
         ("https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Spam/hosts", "popups"),
         ("https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Risk/hosts", "malware"),
-        ("https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt", "ads"),
+        // HaGeZi Ultimate also covers first-party telemetry that sites rely on, so it is not
+        // part of Standard (ads + malware); Aggressive and Ultimate include it via telemetry
+        ("https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt", "telemetry"),
         ("https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts", "ads"),
         ("https://v.firebog.net/hosts/Easyprivacy.txt", "telemetry"),
         ("https://v.firebog.net/hosts/AdguardDNS.txt", "ads"),
