@@ -9,7 +9,6 @@
 - `/etc/hosts` sync keeps the file's mode and owner, writes atomically, and serialises concurrent privileged runs.
 - Every rule, built-in or downloaded, is validated as a domain before it reaches `/etc/hosts`. Invalid entries are skipped and counted.
 - Status counts come from the managed hosts block itself, so the panel shows the real number of active rules.
-- The IDN homograph alert clears when its domain is removed from the whitelist.
 - Restoring the hosts backup turns the shield off, so the next sync does not undo the restore.
 - The engine no longer logs owner UIDs when `config.json` is unreadable.
 - An unreadable `config.json` (wrong owner, too large, not UTF-8) is never overwritten with defaults; changes are refused until it is fixed.
@@ -32,5 +31,4 @@
 ### Changed
 
 - CI actions are pinned to commit hashes.
-
 - The README describes what each feature actually does: NSS resolution in user space, polkit asking once per session, and USB armor marked experimental.
