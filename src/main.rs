@@ -461,9 +461,13 @@ fn load_config() -> OmaBlockConfig {
                     let _ = fs::rename(&path, &backup);
                 }
             },
-            Err(e) => {
+            Err(_) => {
                 // Unreadable (wrong owner, symlink, too large): do not overwrite it.
-                eprintln!("Warning: cannot read config.json securely ({}); using defaults without saving", e);
+                // The error text (owner UIDs) is not echoed to the log.
+                eprintln!(
+                    "Warning: cannot read {} securely (wrong owner, symlink or too large); using defaults without saving",
+                    path.display()
+                );
                 return OmaBlockConfig::default();
             }
         }
