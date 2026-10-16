@@ -55,44 +55,45 @@ Item {
         return parent + "/omablock-status";
     }
 
-    function refresh() {
-        if (!statusProc.running) {
-            statusProc.running = true;
+    // Status polling and the serialized action queue live in EngineClient.
+    function refresh() { engine.refresh() }
+
+    function runAction(cmd, okMsg) { engine.runAction(cmd, okMsg) }
+
+    function reportAction(exitCode, okMsg) {
+        if (exitCode === 0) {
+            if (okMsg) root.testResultMsg = okMsg;
+        } else if (exitCode === 2) {
+            root.testResultMsg = "Rejected: invalid domain or option";
+        } else if (exitCode === 4) {
+            root.testResultMsg = "Saved. Install the system helper (makepkg -si) to apply it";
+        } else {
+            root.testResultMsg = "Action failed (code " + exitCode + ")";
         }
     }
 
     function toggleBlackout() {
-        if (root.networkBlackoutActive) {
-            actionProc.command = [root.enginePath, "--resume-network"];
-        } else {
-            actionProc.command = [root.enginePath, "--panic-blackout"];
-        }
-        actionProc.running = true;
+        root.runAction([root.enginePath, root.networkBlackoutActive ? "--resume-network" : "--panic-blackout"]);
     }
 
     function toggleUsbArmor() {
-        actionProc.command = [root.enginePath, "--toggle-usb-armor"];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--toggle-usb-armor"]);
     }
 
     function toggleShield() {
-        actionProc.command = [root.enginePath, "--toggle"];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--toggle"]);
     }
 
     function setLevel(lvl) {
-        actionProc.command = [root.enginePath, "--set-level", lvl];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--set-level", lvl]);
     }
 
     function pauseShield(mins) {
-        actionProc.command = [root.enginePath, "--pause", String(mins)];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--pause", String(mins)]);
     }
 
     function resumeShield() {
-        actionProc.command = [root.enginePath, "--resume"];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--resume"]);
     }
 
     function testShield() {
@@ -102,52 +103,43 @@ Item {
     }
 
     function toggleDohGuard() {
-        actionProc.command = [root.enginePath, "--toggle-doh-guard"];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--toggle-doh-guard"]);
     }
 
     function toggleAi() {
-        actionProc.command = [root.enginePath, "--toggle-ai"];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--toggle-ai"]);
     }
 
     function toggleKernel() {
-        actionProc.command = [root.enginePath, "--toggle-kernel"];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--toggle-kernel"]);
     }
 
     function toggleCategory(cat) {
-        actionProc.command = [root.enginePath, "--toggle-category", cat];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--toggle-category", cat]);
     }
 
     function addWhitelist(domain) {
         if (!domain || domain.trim().length === 0) return;
-        actionProc.command = [root.enginePath, "--whitelist-add", domain.trim()];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--whitelist-add", domain.trim()]);
     }
 
     function removeWhitelist(domain) {
         if (!domain) return;
-        actionProc.command = [root.enginePath, "--whitelist-remove", domain.trim()];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--whitelist-remove", domain.trim()]);
     }
 
     function addBlacklist(domain) {
         if (!domain || domain.trim().length === 0) return;
-        actionProc.command = [root.enginePath, "--blacklist-add", domain.trim()];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--blacklist-add", domain.trim()]);
     }
 
     function removeBlacklist(domain) {
         if (!domain) return;
-        actionProc.command = [root.enginePath, "--blacklist-remove", domain.trim()];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--blacklist-remove", domain.trim()]);
     }
 
     function flushDns() {
-        actionProc.command = [root.enginePath, "--flush"];
-        actionProc.running = true;
+        root.runAction([root.enginePath, "--flush"]);
     }
 
     function updateBlocklists() {
@@ -156,55 +148,45 @@ Item {
         updateProc.running = true;
     }
 
-    Process {
-        id: statusProc
-        command: [root.statusPath]
-        stdout: StdioCollector {
-            waitForEnd: true
-            onStreamFinished: {
-                try {
-                    var d = JSON.parse(text || "{}");
-                    root.isEnabled = !!d.enabled;
-                    root.blockingLevel = d.blocking_level || "aggressive";
-                    root.activeRules = Number(d.active_rules) || 0;
-                    root.totalRules = Number(d.total_rules) || 0;
-                    root.systemHostsActive = !!d.system_hosts_active;
-                    root.pauseRemainingSecs = Number(d.pause_remaining_secs) || 0;
-                    root.dohPrevention = !!d.doh_prevention;
-                    root.aiProtection = !!d.ai_protection;
-                    root.kernelActive = !!(d.kernel_status && d.kernel_status.is_active);
-                    root.whitelist = d.whitelist || [];
-                    root.blacklist = d.blacklist || [];
-                    root.networkBlackoutActive = !!d.network_blackout_active;
-                    root.usbArmorEnabled = !!d.usb_armor_enabled;
-                    root.selfIntegrityHash = d.self_integrity_hash || "";
-                    root.idnHomographDetected = !!d.idn_homograph_detected;
+    function applyStatus(d) {
+        root.isEnabled = !!d.enabled;
+        root.blockingLevel = d.blocking_level || "aggressive";
+        root.activeRules = Number(d.active_rules) || 0;
+        root.totalRules = Number(d.total_rules) || 0;
+        root.systemHostsActive = !!d.system_hosts_active;
+        root.pauseRemainingSecs = Number(d.pause_remaining_secs) || 0;
+        root.dohPrevention = !!d.doh_prevention;
+        root.aiProtection = !!d.ai_protection;
+        root.kernelActive = !!(d.kernel_status && d.kernel_status.is_active);
+        root.whitelist = d.whitelist || [];
+        root.blacklist = d.blacklist || [];
+        root.networkBlackoutActive = !!d.network_blackout_active;
+        root.usbArmorEnabled = !!d.usb_armor_enabled;
+        root.selfIntegrityHash = d.self_integrity_hash || "";
+        root.idnHomographDetected = !!d.idn_homograph_detected;
 
-                    if (d.categories) {
-                        root.catAds = !!d.categories.ads;
-                        root.catTelemetry = !!d.categories.telemetry;
-                        root.catMalware = !!d.categories.malware;
-                        root.catPopups = !!d.categories.popups;
-                        root.catSocial = !!d.categories.social;
-                    }
+        if (d.categories) {
+            root.catAds = !!d.categories.ads;
+            root.catTelemetry = !!d.categories.telemetry;
+            root.catMalware = !!d.categories.malware;
+            root.catPopups = !!d.categories.popups;
+            root.catSocial = !!d.categories.social;
+        }
 
-                    if (d.category_counts) {
-                        root.countAds = Number(d.category_counts.ads) || 0;
-                        root.countTelemetry = Number(d.category_counts.telemetry) || 0;
-                        root.countMalware = Number(d.category_counts.malware) || 0;
-                        root.countPopups = Number(d.category_counts.popups) || 0;
-                        root.countSocial = Number(d.category_counts.social) || 0;
-                    }
-                } catch(e) {
-                    console.warn("Failed to parse omablock status:", e);
-                }
-            }
+        if (d.category_counts) {
+            root.countAds = Number(d.category_counts.ads) || 0;
+            root.countTelemetry = Number(d.category_counts.telemetry) || 0;
+            root.countMalware = Number(d.category_counts.malware) || 0;
+            root.countPopups = Number(d.category_counts.popups) || 0;
+            root.countSocial = Number(d.category_counts.social) || 0;
         }
     }
 
-    Process {
-        id: actionProc
-        onExited: root.refresh()
+    EngineClient {
+        id: engine
+        statusCommand: [root.statusPath]
+        onStatusReceived: (d) => root.applyStatus(d)
+        onActionFinished: (exitCode, okMsg) => root.reportAction(exitCode, okMsg)
     }
 
     Process {
@@ -226,7 +208,28 @@ Item {
         stdout: StdioCollector {
             waitForEnd: true
             onStreamFinished: {
-                root.testResultMsg = (text || "").trim().slice(0, 100);
+                try {
+                    var d = JSON.parse(String(text || "").slice(0, 131072));
+                    var latency = Number(d.avg_latency_ms) || 0;
+                    root.testResultMsg = (d.success ? "Verified" : "Alert") + " (" + latency.toFixed(2) + "ms): " + String(d.message || "").slice(0, 100);
+                } catch (e) {
+                    root.testResultMsg = "Verification failed: unreadable engine output";
+                }
+            }
+        }
+    }
+
+    Timer {
+        id: pauseCountdownTimer
+        interval: 1000
+        repeat: true
+        running: root.pauseRemainingSecs > 0
+        onTriggered: {
+            if (root.pauseRemainingSecs > 1) {
+                root.pauseRemainingSecs -= 1;
+            } else {
+                root.pauseRemainingSecs = 0;
+                root.refresh();
             }
         }
     }
@@ -341,6 +344,7 @@ Item {
 
                     MouseArea {
                         id: masterMouseArea
+                        hoverEnabled: true
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.toggleShield()
@@ -378,6 +382,7 @@ Item {
 
                     MouseArea {
                         id: pauseMouseArea
+                        hoverEnabled: true
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
@@ -895,6 +900,7 @@ Item {
 
                                 MouseArea {
                                     id: testBtnArea
+                                    hoverEnabled: true
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: root.testShield()
@@ -929,6 +935,7 @@ Item {
 
                                 MouseArea {
                                     id: flushBtnArea
+                                    hoverEnabled: true
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: root.flushDns()
@@ -963,6 +970,7 @@ Item {
 
                                 MouseArea {
                                     id: updateBtnArea
+                                    hoverEnabled: true
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: root.updateBlocklists()
@@ -1134,6 +1142,7 @@ Item {
 
                             MouseArea {
                                 id: addBtnArea
+                                hoverEnabled: true
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
@@ -1202,6 +1211,7 @@ Item {
 
                                     MouseArea {
                                         id: delArea
+                                        hoverEnabled: true
                                         anchors.fill: parent
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {

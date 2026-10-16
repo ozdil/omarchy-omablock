@@ -14,7 +14,7 @@ pub fn validate_domain(raw: &str) -> Result<String, String> {
     }
 
     let last_label = labels[labels.len() - 1];
-    if matches!(last_label, "local" | "localhost" | "lan" | "internal" | "arpa" | "test" | "invalid") {
+    if matches!(last_label, "local" | "localhost" | "localdomain" | "lan" | "internal" | "arpa" | "test" | "invalid") {
         return Err(format!("Domain belongs to reserved local/internal TLD: .{}", last_label));
     }
 

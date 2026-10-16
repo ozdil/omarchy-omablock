@@ -39,7 +39,10 @@ TextEdit {
             insert(start, clean);
             cursorPosition = start + clean.length;
         }
-        control.textEdited();
+        // TextEdit only has textEdited() from Qt 6.9 on; declaring it ourselves would be an
+        // invalid override there, so emit it only where it exists.
+        if (typeof control.textEdited === "function")
+            control.textEdited();
     }
 
     function startBoundedPaste() {
@@ -65,6 +68,14 @@ TextEdit {
                 control.accepted();
                 return ;
             }
+        }
+        if (!control.multiline && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)) {
+            // Single-line field: let Tab move focus instead of inserting a tab character.
+            event.accepted = true;
+            var next = control.nextItemInFocusChain(event.key === Qt.Key_Tab);
+            if (next)
+                next.forceActiveFocus();
+            return ;
         }
         if (event.matches(StandardKey.Paste) || (event.modifiers & Qt.ControlModifier && (event.key === Qt.Key_V || event.key === Qt.Key_Insert)) || (event.modifiers & Qt.ShiftModifier && event.key === Qt.Key_Insert)) {
             event.accepted = true;
@@ -106,7 +117,15 @@ TextEdit {
                     pasteProcess.running = false;
                     return ;
                 }
-                pasteProcess.collectedBytes += chunk.length;
+                // Count UTF-8 bytes, not UTF-16 code units, so the limit matches its name.
+                // A chunk can end in half a surrogate pair; then count the worst case.
+                var chunkBytes;
+                try {
+                    chunkBytes = unescape(encodeURIComponent(chunk)).length;
+                } catch (e) {
+                    chunkBytes = chunk.length * 3;
+                }
+                pasteProcess.collectedBytes += chunkBytes;
                 if (pasteProcess.collectedBytes > control.maxPasteBytes) {
                     pasteProcess.overflowed = true;
                     pasteProcess.running = false;

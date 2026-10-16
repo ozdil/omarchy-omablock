@@ -15,7 +15,16 @@ class TestInstallerManifest(unittest.TestCase):
         self.test_dir = tempfile.TemporaryDirectory()
         self.home = self.test_dir.name
         self.env = os.environ.copy()
+        real_home = os.path.expanduser("~")
         self.env["HOME"] = self.home
+        # build.sh only trusts /usr/bin/cargo or $HOME/.cargo/bin/cargo. With a temp HOME,
+        # expose a rustup-installed cargo there and keep its toolchain and crate cache.
+        real_cargo = os.path.join(real_home, ".cargo/bin/cargo")
+        if not os.path.exists("/usr/bin/cargo") and os.path.exists(real_cargo):
+            os.makedirs(os.path.join(self.home, ".cargo/bin"), exist_ok=True)
+            os.symlink(real_cargo, os.path.join(self.home, ".cargo/bin/cargo"))
+            self.env.setdefault("RUSTUP_HOME", os.path.join(real_home, ".rustup"))
+            self.env.setdefault("CARGO_HOME", os.path.join(real_home, ".cargo"))
         self.bin_dir = os.path.join(self.home, ".local/bin")
         self.state_dir = os.path.join(self.home, ".local/state/omarchy/omablock")
         os.makedirs(self.bin_dir, exist_ok=True)

@@ -148,3 +148,49 @@ fn test_kernel_netfilter_ruleset_generation() {
     assert!(ruleset.contains("chain output"));
     assert!(ruleset.contains("reject with icmp type admin-prohibited"));
 }
+
+#[test]
+fn test_kernel_state_file_parsing() {
+    let dir = std::env::temp_dir().join(format!("omablock-state-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("kernel_state.json");
+
+    // Missing file: nothing active
+    let st = KernelNetfilter::read_state_from(&path);
+    assert!(!st.kernel_active && !st.blackout_active);
+
+    std::fs::write(&path, br#"{"nft_available": true, "kernel_active": true, "kernel_rule_count": 4, "blackout_active": false}"#).unwrap();
+    let st = KernelNetfilter::read_state_from(&path);
+    assert!(st.kernel_active);
+    assert_eq!(st.kernel_rule_count, 4);
+    assert!(!st.blackout_active);
+
+    // Garbage: treated as inactive instead of failing the status output
+    std::fs::write(&path, b"not json").unwrap();
+    assert!(!KernelNetfilter::read_state_from(&path).kernel_active);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_dga_classifier_avoids_known_false_positives() {
+    let classifier = DgaClassifier::new();
+    // Plain IDNs, first-party brand CDNs and compound public suffixes are not phishing
+    for domain in [
+        "xn--mnchen-3ya.de",              // münchen.de
+        "xn--d1acpjx3f.xn--p1ai",         // яндекс.рф
+        "raw.githubusercontent.com",
+        "fonts.googleapis.com",
+        "bbc.co.uk",
+    ] {
+        let a = classifier.assess(domain);
+        assert!(!a.is_suspicious, "'{}' must not be flagged (score {}, {:?})", domain, a.risk_score, a.reasons);
+    }
+}
+
+#[test]
+fn test_punycode_decode() {
+    assert_eq!(DgaClassifier::punycode_decode("mnchen-3ya").as_deref(), Some("münchen"));
+    assert_eq!(DgaClassifier::punycode_decode("80ak6aa92e").as_deref(), Some("аррӏе"));
+    assert!(DgaClassifier::punycode_decode("!!").is_none());
+}

@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "qml"
 
 Panel {
   id: root
@@ -53,10 +54,10 @@ Panel {
   property string toastMsg: ""
   property bool showAboutModal: false
   readonly property string manifestPath: Qt.resolvedUrl("manifest.json").toString().replace(/^file:\/\//, "")
-  readonly property string manifestFallbackPath: (Quickshell.env("HOME") || "/home/ozdil") + "/.config/omarchy/plugins/ozdil.omablock/manifest.json"
+  readonly property string manifestFallbackPath: (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/ozdil.omablock/manifest.json"
 
   property string pluginName: "OmaBlock"
-  property string pluginVersion: "1.4.1"
+  property string pluginVersion: "1.5.0"
   property string pluginDescription: "Zero-latency system-wide adblocker, DNS/hosts privacy shield, and OmaBlock Shield Bridge for Chromium on Omarchy Linux."
   property string pluginAuthor: "Ozan Özdil (ozdil)"
   property string pluginLicense: "MIT"
@@ -105,43 +106,50 @@ Panel {
   }
 
   function refresh() {
-    if (!statusProc.running) {
-      statusProc.running = true
+    engine.refresh()
+  }
+
+  function runAction(cmd, okMsg) {
+    engine.runAction(cmd, okMsg)
+  }
+
+  // okMsg is shown only after the engine exits 0, so a rejected domain or a failed
+  // privileged sync no longer reports success.
+  function reportAction(exitCode, okMsg) {
+    if (exitCode === 0) {
+      if (okMsg) root.showToast(okMsg)
+    } else if (exitCode === 2) {
+      root.showToast("Rejected: invalid domain or option")
+    } else if (exitCode === 4) {
+      root.showToast("Saved. Install the system helper (makepkg -si) to apply it")
+    } else {
+      root.showToast("Action failed (code " + exitCode + ")")
     }
   }
 
   function setBlockingLevel(lvl) {
-    actionProc.command = [root.resolveEnginePath(), "--set-level", lvl]
-    actionProc.running = true
     var label = lvl === "ultimate" ? "Ultimate (Anti-Popup)" : (lvl === "aggressive" ? "Aggressive" : "Standard")
-    root.showToast("Blocking level: " + label)
+    root.runAction([root.resolveEnginePath(), "--set-level", lvl], "Blocking level: " + label)
   }
 
   function pauseShield(minutes) {
-    actionProc.command = [root.resolveEnginePath(), "--pause", String(minutes)]
-    actionProc.running = true
-    root.showToast("Shield paused for " + minutes + " minutes")
+    root.runAction([root.resolveEnginePath(), "--pause", String(minutes)], "Shield paused for " + minutes + " minutes")
   }
 
   function resumeShield() {
-    actionProc.command = [root.resolveEnginePath(), "--resume"]
-    actionProc.running = true
-    root.showToast("Shield protection resumed")
+    root.runAction([root.resolveEnginePath(), "--resume"], "Shield protection resumed")
   }
 
   function toggleDohGuard() {
-    actionProc.command = [root.resolveEnginePath(), "--toggle-doh-guard"]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--toggle-doh-guard"])
   }
 
   function toggleAi() {
-    actionProc.command = [root.resolveEnginePath(), "--toggle-ai"]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--toggle-ai"])
   }
 
   function toggleKernel() {
-    actionProc.command = [root.resolveEnginePath(), "--toggle-kernel"]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--toggle-kernel"])
   }
 
   function formatRemaining(secs) {
@@ -151,13 +159,11 @@ Panel {
   }
 
   function toggleMaster() {
-    actionProc.command = [root.resolveEnginePath(), "--toggle"]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--toggle"])
   }
 
   function toggleCategory(cat) {
-    actionProc.command = [root.resolveEnginePath(), "--toggle-category", cat]
-    actionProc.running = true
+    root.runAction([root.resolveEnginePath(), "--toggle-category", cat])
   }
 
   function runTest() {
@@ -176,37 +182,47 @@ Panel {
   }
 
   function flushDns() {
-    actionProc.command = [root.resolveEnginePath(), "--flush"]
-    actionProc.running = true
-    showToast("Flushed system DNS caches")
+    root.runAction([root.resolveEnginePath(), "--flush"], "Flushed system DNS caches")
+  }
+
+  // Same rules as the engine's validate_domain, checked before spawning a process
+  function isValidDomain(domain) {
+    var d = String(domain || "").trim().toLowerCase().replace(/\.+$/, "")
+    if (d.length === 0 || d.length > 253 || d.indexOf(".") < 0) return false
+    if (/\.(local|localhost|lan|internal|arpa|test|invalid)$/.test(d)) return false
+    var labels = d.split(".")
+    for (var i = 0; i < labels.length; i++) {
+      if (!/^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/.test(labels[i])) return false
+    }
+    return true
   }
 
   function addWhitelist(domain) {
     if (!domain) return
-    actionProc.command = [root.resolveEnginePath(), "--whitelist-add", domain]
-    actionProc.running = true
-    showToast("Whitelisted: " + domain)
+    if (!root.isValidDomain(domain)) {
+      root.showToast("Invalid domain: " + domain)
+      return
+    }
+    root.runAction([root.resolveEnginePath(), "--whitelist-add", domain], "Whitelisted: " + domain)
   }
 
   function removeWhitelist(domain) {
     if (!domain) return
-    actionProc.command = [root.resolveEnginePath(), "--whitelist-remove", domain]
-    actionProc.running = true
-    showToast("Removed from whitelist: " + domain)
+    root.runAction([root.resolveEnginePath(), "--whitelist-remove", domain], "Removed from whitelist: " + domain)
   }
 
   function addBlacklist(domain) {
     if (!domain) return
-    actionProc.command = [root.resolveEnginePath(), "--blacklist-add", domain]
-    actionProc.running = true
-    showToast("Blocked: " + domain)
+    if (!root.isValidDomain(domain)) {
+      root.showToast("Invalid domain: " + domain)
+      return
+    }
+    root.runAction([root.resolveEnginePath(), "--blacklist-add", domain], "Blocked: " + domain)
   }
 
   function removeBlacklist(domain) {
     if (!domain) return
-    actionProc.command = [root.resolveEnginePath(), "--blacklist-remove", domain]
-    actionProc.running = true
-    showToast("Removed from blacklist: " + domain)
+    root.runAction([root.resolveEnginePath(), "--blacklist-remove", domain], "Removed from blacklist: " + domain)
   }
 
   IpcHandler {
@@ -222,67 +238,54 @@ Panel {
     function setLevel(lvl: string) { root.setBlockingLevel(lvl) }
   }
 
-  Process {
-    id: statusProc
-    command: [root.resolveEnginePath(), "--json"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var cleanText = String(text || "").slice(0, 131072)
-          var d = JSON.parse(cleanText)
-          root.isEnabled = !!d.enabled
-          root.blockingLevel = d.blocking_level || "aggressive"
-          root.activeRules = d.active_rules || 0
-          root.totalRules = d.total_rules || 0
-          root.systemHostsActive = !!d.system_hosts_active
+  function applyStatus(d) {
+    root.isEnabled = !!d.enabled
+    root.blockingLevel = d.blocking_level || "aggressive"
+    root.activeRules = d.active_rules || 0
+    root.totalRules = d.total_rules || 0
+    root.systemHostsActive = !!d.system_hosts_active
 
-          if (d.categories) {
-            root.catAds = !!d.categories.ads
-            root.catTelemetry = !!d.categories.telemetry
-            root.catMalware = !!d.categories.malware
-            root.catSocial = !!d.categories.social
-            root.catPopups = !!d.categories.popups
-          }
+    if (d.categories) {
+      root.catAds = !!d.categories.ads
+      root.catTelemetry = !!d.categories.telemetry
+      root.catMalware = !!d.categories.malware
+      root.catSocial = !!d.categories.social
+      root.catPopups = !!d.categories.popups
+    }
 
-          if (d.category_counts) {
-            root.countAds = d.category_counts.ads || 0
-            root.countTelemetry = d.category_counts.telemetry || 0
-            root.countMalware = d.category_counts.malware || 0
-            root.countSocial = d.category_counts.social || 0
-            root.countPopups = d.category_counts.popups || 0
-          }
+    if (d.category_counts) {
+      root.countAds = d.category_counts.ads || 0
+      root.countTelemetry = d.category_counts.telemetry || 0
+      root.countMalware = d.category_counts.malware || 0
+      root.countSocial = d.category_counts.social || 0
+      root.countPopups = d.category_counts.popups || 0
+    }
 
-          root.whitelist = d.whitelist || []
-          root.blacklist = d.blacklist || []
-          root.lastUpdated = d.last_updated || "Built-in Curated v1.0"
-          root.pauseRemainingSecs = d.pause_remaining_secs || 0
-          root.dohPrevention = !!d.doh_prevention
-          root.aiProtection = !!d.ai_protection
-          root.kernelEnforcement = !!d.kernel_enforcement
-          if (d.kernel_status) {
-            root.kernelActive = !!(d.kernel_status.is_active || d.kernel_status.active)
-            root.kernelRuleCount = d.kernel_status.active_rule_count || d.kernel_status.rule_count || 0
-          }
+    root.whitelist = d.whitelist || []
+    root.blacklist = d.blacklist || []
+    root.lastUpdated = d.last_updated || "Built-in Curated v1.0"
+    root.pauseRemainingSecs = d.pause_remaining_secs || 0
+    root.dohPrevention = !!d.doh_prevention
+    root.aiProtection = !!d.ai_protection
+    root.kernelEnforcement = !!d.kernel_enforcement
+    if (d.kernel_status) {
+      root.kernelActive = !!(d.kernel_status.is_active || d.kernel_status.active)
+      root.kernelRuleCount = d.kernel_status.active_rule_count || d.kernel_status.rule_count || 0
+    }
 
-          if (d.last_test) {
-            root.testSuccess = !!d.last_test.success
-            root.testMessage = d.last_test.message || ""
-            root.testLatency = d.last_test.avg_latency_ms || 0.0
-          }
-        } catch (e) {}
-      }
+    if (d.last_test) {
+      root.testSuccess = !!d.last_test.success
+      root.testMessage = d.last_test.message || ""
+      root.testLatency = d.last_test.avg_latency_ms || 0.0
     }
   }
 
-  Process {
-    id: actionProc
-    onExited: {
-      root.refresh()
-    }
+  EngineClient {
+    id: engine
+    statusCommand: [root.resolveEnginePath(), "--json"]
+    onStatusReceived: (d) => root.applyStatus(d)
+    onActionFinished: (exitCode, okMsg) => root.reportAction(exitCode, okMsg)
   }
-
-
 
   Process {
     id: testProc
@@ -296,7 +299,7 @@ Panel {
           root.testSuccess = !!d.success
           root.testMessage = d.message || ""
           root.testLatency = d.avg_latency_ms || 0.0
-          root.showToast(d.success ? "Shield Verified (0.00ms)" : "Verification alert")
+          root.showToast(d.success ? ("Shield Verified (" + Number(root.testLatency).toFixed(2) + "ms)") : "Verification alert")
         } catch (e) {}
         root.refresh()
       }
@@ -305,9 +308,16 @@ Panel {
 
   Process {
     id: updateProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        // The engine exits 0 even when the download fails; trust its summary line.
+        var ok = String(text || "").indexOf("Success: true") !== -1
+        root.showToast(ok ? "Blocklists updated successfully" : "Blocklist update failed")
+      }
+    }
     onExited: {
       root.isUpdating = false
-      root.showToast("Blocklists updated successfully")
       root.refresh()
     }
   }
@@ -357,8 +367,7 @@ Panel {
   }
 
   Component.onDestruction: {
-    if (statusProc.running) statusProc.running = false
-    if (actionProc.running) actionProc.running = false
+    engine.stop()
     if (testProc.running) testProc.running = false
     if (updateProc.running) updateProc.running = false
     if (toastTimer.running) toastTimer.running = false
@@ -1703,6 +1712,9 @@ Panel {
               placeholderText: "Domain (e.g. ad.example.com)"
               placeholderTextColor: root.textTertiary
               maxLength: 256
+              onPasteNoticeChanged: {
+                if (pasteNotice) root.showToast(pasteNotice)
+              }
               onAccepted: {
                 if (domainInput.text.trim()) {
                   root.addWhitelist(domainInput.text.trim())
@@ -1830,7 +1842,7 @@ Panel {
         Text {
           textFormat: Text.PlainText
           anchors.horizontalCenter: parent.horizontalCenter
-          text: "OmaBlock v1.0 • Updated: " + root.lastUpdated
+          text: "OmaBlock v" + root.pluginVersion + " • Updated: " + root.lastUpdated
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption - 2
           color: root.textSecondary

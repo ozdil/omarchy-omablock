@@ -11,6 +11,8 @@ Adheres strictly to the Omarchy Security Guide:
 - Automatic DNS cache flush via resolvectl.
 """
 
+import fcntl
+import json
 import os
 import re
 import sys
@@ -46,7 +48,8 @@ def read_hosts_file(path: str = HOSTS_PATH) -> str:
             print(f"Fatal error: {path} exceeds maximum allowed size ({MAX_HOSTS_SIZE} bytes).", file=sys.stderr)
             sys.exit(1)
 
-        with open(fd, "r", encoding="utf-8", errors="ignore") as f:
+        # surrogateescape round-trips non-UTF-8 bytes instead of silently dropping them
+        with open(fd, "r", encoding="utf-8", errors="surrogateescape") as f:
             content = f.read(MAX_HOSTS_SIZE)
             leftover = f.read(1)
             if leftover:
@@ -65,9 +68,10 @@ BANNER_COMMENT = (
     "# Managed automatically by OmaBlock (ozdil.omablock). Do not edit inside this block."
 )
 
-# RFC 1035 strict domain regex: labels 1-63 chars starting/ending with alphanumeric, separated by single dots
+# RFC 1035 domain regex: labels 1-63 chars starting/ending with alphanumeric, separated by single dots.
+# Inner underscores are allowed (as in the engine's validate_domain) since real tracker hosts use them.
 DOMAIN_REGEX = re.compile(
-    r"^(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$"
+    r"^(?!-)(?:[a-zA-Z0-9](?:[a-zA-Z0-9_-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$"
 )
 
 
@@ -168,19 +172,34 @@ def flush_dns_cache():
 
 def strip_omablock_block(content: str) -> str:
     """Removes any existing OmaBlock block from hosts content."""
-    lines = content.splitlines()
+    # split("\n") instead of splitlines(): the latter also breaks on \x0c, \x1c, \u2028...
+    lines = content.split("\n")
     out = []
+    block = []
     in_block = False
 
     for line in lines:
         if BEGIN_MARKER in line:
             in_block = True
+            block = []
             continue
         if END_MARKER in line:
             in_block = False
+            block = []
             continue
-        if not in_block:
+        if in_block:
+            block.append(line)
+        else:
             out.append(line)
+
+    # A BEGIN without a matching END (e.g. a hand edit) must not swallow user
+    # entries that follow it: keep everything except our own sinkhole lines.
+    if in_block:
+        out.extend(
+            line for line in block
+            if line.strip() != BANNER_COMMENT
+            and not line.startswith(("0.0.0.0 ", ":: "))
+        )
 
     # Trim trailing empty lines
     while out and not out[-1].strip():
@@ -203,6 +222,49 @@ RESERVED_DOMAINS = {
 }
 
 
+def fsync_dir(path: str):
+    """Flushes a directory entry so a completed os.replace survives a crash."""
+    try:
+        dfd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    except OSError:
+        return
+    try:
+        os.fsync(dfd)
+    except OSError:
+        pass
+    finally:
+        os.close(dfd)
+
+
+def copy_hosts_metadata(tmp_path: str):
+    """Gives the replacement file the current hosts file's mode and owner (0644 root if absent)."""
+    mode, uid, gid = 0o644, None, None
+    try:
+        st = os.lstat(HOSTS_PATH)
+        if stat.S_ISREG(st.st_mode):
+            mode, uid, gid = stat.S_IMODE(st.st_mode), st.st_uid, st.st_gid
+    except FileNotFoundError:
+        pass
+    os.chmod(tmp_path, mode)
+    if uid is not None and (uid, gid) != (os.geteuid(), os.getegid()):
+        os.chown(tmp_path, uid, gid, follow_symlinks=False)
+
+
+def acquire_helper_lock():
+    """Serialises concurrent helper runs so apply/clear/blackout cannot interleave."""
+    if os.path.islink(KERNEL_STATE_DIR):
+        print(f"Fatal error: {KERNEL_STATE_DIR} is a symlink.", file=sys.stderr)
+        sys.exit(1)
+    os.makedirs(KERNEL_STATE_DIR, mode=0o755, exist_ok=True)
+    fd = os.open(
+        os.path.join(KERNEL_STATE_DIR, "helper.lock"),
+        os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+        0o600,
+    )
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    return fd
+
+
 def ensure_backup():
     """Creates a backup of /etc/hosts if it doesn't already exist, strictly without following symlinks."""
     if os.path.lexists(BACKUP_PATH):
@@ -222,7 +284,7 @@ def ensure_backup():
     try:
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(BACKUP_PATH, flags, 0o644)
-        with open(fd, "w", encoding="utf-8") as dst:
+        with open(fd, "w", encoding="utf-8", errors="surrogateescape") as dst:
             dst.write(content)
     except FileExistsError:
         pass
@@ -281,8 +343,15 @@ def apply_rules(rules_file: str):
     valid_domains = []
     MAX_DOMAINS = 500_000
     try:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        # O_NONBLOCK keeps a FIFO swapped in after the lstat check from hanging the helper;
+        # fstat on the opened fd is the check that actually counts.
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         fd = os.open(rules_file, flags)
+        fst = os.fstat(fd)
+        if not stat.S_ISREG(fst.st_mode) or fst.st_size > 50 * 1024 * 1024:
+            os.close(fd)
+            print(f"Security violation: Rules file '{rules_file}' changed during verification.", file=sys.stderr)
+            sys.exit(1)
         with open(fd, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
                 line = line.strip()
@@ -303,7 +372,7 @@ def apply_rules(rules_file: str):
                 if (
                     domain in RESERVED_DOMAINS
                     or "." not in domain
-                    or domain.endswith((".local", ".localhost", ".lan", ".internal", ".arpa"))
+                    or domain.endswith((".local", ".localhost", ".localdomain", ".lan", ".internal", ".arpa", ".test", ".invalid"))
                 ):
                     continue
 
@@ -333,7 +402,7 @@ def apply_rules(rules_file: str):
     try:
         flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(TEMP_PATH, flags, 0o644)
-        with open(fd, "w", encoding="utf-8") as f:
+        with open(fd, "w", encoding="utf-8", errors="surrogateescape") as f:
             f.write(clean_hosts)
             if not clean_hosts.endswith("\n"):
                 f.write("\n")
@@ -344,10 +413,13 @@ def apply_rules(rules_file: str):
                 if d in DOH_DOMAINS:
                     f.write(f":: {d}\n")
             f.write(END_MARKER + "\n")
-        os.chmod(TEMP_PATH, 0o644)
+            f.flush()
+            os.fsync(f.fileno())
+        copy_hosts_metadata(TEMP_PATH)
 
         # Atomic swap
         os.replace(TEMP_PATH, HOSTS_PATH)
+        fsync_dir(os.path.dirname(HOSTS_PATH) or ".")
     except Exception as e:
         print(f"Fatal error: Failed to write or replace {HOSTS_PATH}: {e}", file=sys.stderr)
         if os.path.lexists(TEMP_PATH):
@@ -362,6 +434,109 @@ def apply_rules(rules_file: str):
     print(f"Applied {len(valid_domains)} OmaBlock rules to {HOSTS_PATH}.")
 
 
+# nft needs CAP_NET_ADMIN, so the unprivileged engine cannot query it. The helper
+# records what it installed here (tmpfs, world-readable, gone after reboot just
+# like the nft tables themselves) and the engine reads it for its status output.
+KERNEL_STATE_DIR = "/run/omablock"
+KERNEL_STATE_FILE = "kernel_state.json"
+KERNEL_TABLE = "omablock"
+BLACKOUT_TABLE = "omablock_blackout"
+
+BLACKOUT_SCRIPT = """
+table inet omablock_blackout
+delete table inet omablock_blackout
+table inet omablock_blackout {
+    chain output {
+        type filter hook output priority filter; policy accept;
+        # Reject non-loopback DNS (53, 853). Locally generated packets have no input
+        # interface, so the loopback exemption must match on oifname.
+        oifname != "lo" tcp dport { 53, 853 } counter reject with tcp reset
+        oifname != "lo" udp dport { 53, 853 } counter reject with icmpx type admin-prohibited
+    }
+}
+"""
+
+
+def run_nft_script(nft_bin: str, script: str) -> bool:
+    """Feeds an nft script on stdin (no temp file to race on)."""
+    try:
+        proc = subprocess.run(
+            [nft_bin, "-f", "-"],
+            input=script,
+            text=True,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
+def nft_table_rule_count(nft_bin, table: str):
+    """Returns the number of reject rules in an inet table, or None if it does not exist."""
+    if not nft_bin:
+        return None
+    try:
+        proc = subprocess.run(
+            [nft_bin, "list", "table", "inet", table],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    return sum(1 for line in proc.stdout.splitlines() if " reject" in line)
+
+
+def write_kernel_state():
+    """Publishes the current nft state for the unprivileged engine."""
+    nft_bin = shutil.which("nft")
+    kernel_rules = nft_table_rule_count(nft_bin, KERNEL_TABLE)
+    blackout_rules = nft_table_rule_count(nft_bin, BLACKOUT_TABLE)
+    state = {
+        "nft_available": bool(nft_bin),
+        "kernel_active": kernel_rules is not None,
+        "kernel_rule_count": kernel_rules or 0,
+        "blackout_active": blackout_rules is not None,
+    }
+    try:
+        if os.path.islink(KERNEL_STATE_DIR):
+            print(f"Warning: {KERNEL_STATE_DIR} is a symlink; not writing kernel state.", file=sys.stderr)
+            return
+        os.makedirs(KERNEL_STATE_DIR, mode=0o755, exist_ok=True)
+        target = os.path.join(KERNEL_STATE_DIR, KERNEL_STATE_FILE)
+        tmp = target + ".tmp"
+        if os.path.lexists(tmp):
+            os.unlink(tmp)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+        with open(fd, "w", encoding="utf-8") as f:
+            json.dump(state, f)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, target)
+    except Exception as e:
+        print(f"Warning: Could not write kernel state: {e}", file=sys.stderr)
+
+
+def apply_blackout() -> bool:
+    nft_bin = shutil.which("nft")
+    if not nft_bin:
+        print("Error: nft is not installed.", file=sys.stderr)
+        return False
+    return run_nft_script(nft_bin, BLACKOUT_SCRIPT)
+
+
+def clear_blackout():
+    nft_bin = shutil.which("nft")
+    if not nft_bin:
+        return
+    subprocess.run([nft_bin, "delete", "table", "inet", BLACKOUT_TABLE], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+
+
 def apply_nftables_rules():
     """Applies kernel-level Netfilter rules for OmaBlock if nftables is available."""
     nft_bin = shutil.which("nft")
@@ -369,7 +544,11 @@ def apply_nftables_rules():
         return
 
     # Generate DoH/DoT drop table
+    # Declaring then deleting the table first makes `nft -f` replace it atomically;
+    # without this every apply appends a second copy of the chain rules.
     nft_script = """
+table inet omablock
+delete table inet omablock
 table inet omablock {
     set bad_ipv4 {
         type ipv4_addr;
@@ -391,19 +570,7 @@ table inet omablock {
     }
 }
 """
-    tmp_nft = "/etc/hosts.omablock.nft.tmp"
-    try:
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(tmp_nft, flags, 0o600)
-        with open(fd, "w", encoding="utf-8") as f:
-            f.write(nft_script)
-        subprocess.run([nft_bin, "-f", tmp_nft], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
-    finally:
-        if os.path.lexists(tmp_nft):
-            try:
-                os.unlink(tmp_nft)
-            except OSError:
-                pass
+    run_nft_script(nft_bin, nft_script)
 
 
 def clear_nftables_rules():
@@ -417,6 +584,8 @@ def clear_nftables_rules():
 def clear_rules():
     """Removes OmaBlock rules from /etc/hosts and kernel Netfilter table."""
     clear_nftables_rules()
+    # Browser DoH policies are independent of the hosts block; always remove them.
+    clear_browser_doh_policy()
     if not os.path.lexists(HOSTS_PATH):
         return
 
@@ -439,11 +608,14 @@ def clear_rules():
     try:
         flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
         fd = os.open(TEMP_PATH, flags, 0o644)
-        with open(fd, "w", encoding="utf-8") as f:
+        with open(fd, "w", encoding="utf-8", errors="surrogateescape") as f:
             f.write(clean_hosts)
-        os.chmod(TEMP_PATH, 0o644)
+            f.flush()
+            os.fsync(f.fileno())
+        copy_hosts_metadata(TEMP_PATH)
 
         os.replace(TEMP_PATH, HOSTS_PATH)
+        fsync_dir(os.path.dirname(HOSTS_PATH) or ".")
     except Exception as e:
         print(f"Fatal error: Failed to clear OmaBlock rules from {HOSTS_PATH}: {e}", file=sys.stderr)
         if os.path.lexists(TEMP_PATH):
@@ -453,17 +625,70 @@ def clear_rules():
                 pass
         sys.exit(1)
 
-    clear_browser_doh_policy()
     flush_dns_cache()
     print("Cleared OmaBlock rules from /etc/hosts.")
 
 
+def require_root(cmd: str):
+    if os.geteuid() != 0:
+        print(f"Error: {cmd} requires root privileges.", file=sys.stderr)
+        sys.exit(1)
+
+
+PRE_RESTORE_PATH = "/etc/hosts.omablock.pre-restore"
+
+
+def write_hosts_atomically(content: str):
+    """Writes content to HOSTS_PATH through TEMP_PATH with fsync and the original metadata."""
+    if os.path.lexists(TEMP_PATH):
+        os.unlink(TEMP_PATH)
+    fd = os.open(TEMP_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    try:
+        with open(fd, "w", encoding="utf-8", errors="surrogateescape") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        copy_hosts_metadata(TEMP_PATH)
+        os.replace(TEMP_PATH, HOSTS_PATH)
+        fsync_dir(os.path.dirname(HOSTS_PATH) or ".")
+    except Exception:
+        if os.path.lexists(TEMP_PATH):
+            os.unlink(TEMP_PATH)
+        raise
+
+
+def restore_backup():
+    """Puts back the /etc/hosts saved before OmaBlock first touched it.
+    The current file is kept as PRE_RESTORE_PATH, and any OmaBlock block is stripped."""
+    if not os.path.lexists(BACKUP_PATH) or os.path.islink(BACKUP_PATH):
+        print(f"Error: no usable backup at {BACKUP_PATH}.", file=sys.stderr)
+        sys.exit(1)
+    backup = read_hosts_file(BACKUP_PATH)
+    current = read_hosts_file(HOSTS_PATH)
+    try:
+        if os.path.lexists(PRE_RESTORE_PATH):
+            os.unlink(PRE_RESTORE_PATH)
+        fd = os.open(PRE_RESTORE_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+        with open(fd, "w", encoding="utf-8", errors="surrogateescape") as f:
+            f.write(current)
+        write_hosts_atomically(strip_omablock_block(backup))
+    except Exception as e:
+        print(f"Fatal error: could not restore {HOSTS_PATH}: {e}", file=sys.stderr)
+        sys.exit(1)
+    clear_nftables_rules()
+    clear_browser_doh_policy()
+    flush_dns_cache()
+    print(f"Restored {HOSTS_PATH} from {BACKUP_PATH}; previous file kept at {PRE_RESTORE_PATH}.")
+
+
 def main():
     if len(sys.argv) < 2:
-        print("Usage: omablock-hosts-sync [--apply <rules_file> [--with-kernel] | --clear | --status]")
+        print("Usage: omablock-hosts-sync [--apply <rules_file> [--with-kernel] | --clear | --status | --blackout-on | --blackout-off | --restore-backup]")
         sys.exit(1)
 
     cmd = sys.argv[1]
+    if cmd in ("--apply", "--clear", "--blackout-on", "--blackout-off", "--restore-backup") and os.geteuid() == 0:
+        _lock_fd = acquire_helper_lock()  # held until the process exits
     if cmd == "--status":
         get_status()
     elif cmd == "--clear":
@@ -471,6 +696,24 @@ def main():
             print("Error: --clear requires root privileges.", file=sys.stderr)
             sys.exit(1)
         clear_rules()
+        write_kernel_state()
+    elif cmd == "--restore-backup":
+        require_root(cmd)
+        restore_backup()
+        write_kernel_state()
+    elif cmd == "--blackout-on":
+        require_root(cmd)
+        ok = apply_blackout()
+        write_kernel_state()
+        if not ok:
+            print("Error: Failed to apply network blackout.", file=sys.stderr)
+            sys.exit(1)
+        print("Network blackout applied.")
+    elif cmd == "--blackout-off":
+        require_root(cmd)
+        clear_blackout()
+        write_kernel_state()
+        print("Network blackout cleared.")
     elif cmd == "--apply":
         if len(sys.argv) < 3:
             print("Error: Missing rules file path.", file=sys.stderr)
@@ -481,6 +724,10 @@ def main():
         apply_rules(sys.argv[2])
         if "--with-kernel" in sys.argv:
             apply_nftables_rules()
+        else:
+            # Kernel enforcement was switched off: drop any table left from a previous apply.
+            clear_nftables_rules()
+        write_kernel_state()
     else:
         print(f"Unknown command: {cmd}", file=sys.stderr)
         sys.exit(1)

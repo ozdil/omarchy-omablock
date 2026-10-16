@@ -1,0 +1,73 @@
+name: "CI"
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --locked
+
+      - name: Privileged flow end to end (private namespaces)
+        # engine -> sudo -> omablock-hosts-sync -> /etc/hosts and nftables, against a
+        # copy of /etc in its own mount and network namespace
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q nftables
+          cargo build --locked
+          sudo bash tests/e2e_privileged.sh target/debug/omablock-engine
+
+      - name: Qt runtime for the QML tests
+        # tests/test_qml_runtime.py loads the shipped QML with Quickshell stand-ins
+        run: |
+          sudo apt-get install -y -q libegl1 libgl1 libxkbcommon0 libfontconfig1
+          python3 -m pip install --user --break-system-packages "PySide6-Essentials==6.12.0"
+
+      - name: Python helper and installer tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Shell syntax
+        run: bash -n build.sh uninstall.sh omablock-dashboard omablock-status omablock.install
+
+      - name: Validate extension rules and versions
+        run: |
+          node -e '
+            const fs = require("fs");
+            const rules = JSON.parse(fs.readFileSync("extensions/chrome/rules.json", "utf8"));
+            const ids = new Set();
+            for (const r of rules) {
+              if (!Number.isInteger(r.id) || r.id < 1 || ids.has(r.id)) throw new Error("bad or duplicate rule id " + r.id);
+              ids.add(r.id);
+            }
+            const ext = JSON.parse(fs.readFileSync("extensions/chrome/manifest.json", "utf8")).version;
+            const popup = fs.readFileSync("extensions/chrome/popup.html", "utf8");
+            if (!popup.includes(">v" + ext + "<")) throw new Error("popup.html version badge does not match extension " + ext);
+            const plugin = JSON.parse(fs.readFileSync("manifest.json", "utf8")).version;
+            const cargo = /^version = "([^"]+)"/m.exec(fs.readFileSync("Cargo.toml", "utf8"))[1];
+            const pkg = /^pkgver=(.+)$/m.exec(fs.readFileSync("PKGBUILD", "utf8"))[1];
+            const panel = /pluginVersion: "([^"]+)"/.exec(fs.readFileSync("Panel.qml", "utf8"))[1];
+            const all = { plugin, cargo, pkg, panel };
+            if (new Set(Object.values(all)).size !== 1) throw new Error("version mismatch: " + JSON.stringify(all));
+            console.log("rules:", rules.length, "versions:", JSON.stringify(all), "extension:", ext);
+          '

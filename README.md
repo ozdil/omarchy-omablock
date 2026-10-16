@@ -5,7 +5,7 @@
 
 ![OmaBlock Preview](preview.png)
 
-Kernel-level ad, tracker, and telemetry sinkhole plugin engineered for Omarchy Linux.
+System-wide ad, tracker, and telemetry sinkhole plugin engineered for Omarchy Linux.
 
 Author: Ozan Ozdil (ozdil)  
 License: MIT  
@@ -13,11 +13,24 @@ Plugin ID: ozdil.omablock
 
 ---
 
+## What's New in 1.5.0
+
+- Correct kernel rules: the nftables tables are written correctly and applied through the privileged helper.
+- Safer `/etc/hosts` sync: atomic writes that keep the file's mode and owner, and every rule validated as a domain first.
+- Pause ends on its own, and `omablock --restore-hosts` puts back the original `/etc/hosts`.
+- Accurate status: the panel shows the real number of active rules and a clear message for each exit code.
+- Chrome / Chromium extension in English and Turkish, with a per-tab badge and no ad flash on load.
+- End-to-end, Rust and QML tests run in CI on every change.
+
+Full list: [CHANGELOG.md](CHANGELOG.md)
+
+---
+
 ## Features
 
-- Zero Latency (< 0.1ms): Leverages atomic, kernel-level DNS sinkhole routing (`0.0.0.0`) without middleman proxy overhead or battery drain.
+- Zero Latency (< 0.1ms): Blocked domains are written to `/etc/hosts` as `0.0.0.0` sinkhole entries, which the system resolver (glibc NSS, in user space) answers locally without a middleman proxy or battery drain.
 - Military-Grade HANCORE Defense: Deep integration of self-defense features including Self-Integrity Verification (SHA-256 binary hashing) and `prctl(PR_SET_DUMPABLE, 0)` anti-tamper.
-- Advanced Kernel Blackout: Panic Blackout mode and Zero-Trust egress lockdown (drops non-loopback DNS 53/853 with TCP RST/ICMP admin-prohibited) for immediate threat containment.
+- Kernel Enforcement and Blackout (optional, needs `nftables`): Kernel enforcement adds an `inet omablock` nftables table that rejects DoH (443), DoT (853) and UDP DNS (53) traffic to well-known public resolvers (Cloudflare, Google, Quad9). Panic Blackout adds an `inet omablock_blackout` table that rejects all non-loopback DNS (53 and 853) until you resume the network.
 - AI-Powered Threat Detection: Integrated IDN Homograph and Punycode spoofing radar via advanced DGA Classification engine to stop zero-day phishing typosquatting.
 - 79,500+ Curated Rules: Pre-bundled offline database with one-click online synchronization against StevenBlack Unified and EasyPrivacy upstream blocklists.
 - Fine-Grained Category Filtering:
@@ -27,10 +40,10 @@ Plugin ID: ozdil.omablock
   - Social Network Trackers: Third-party pixel trackers, audience measurement, and social widgets.
 - Live Shield Verification: In-panel live resolution diagnostics to verify protection in real time.
 - Custom Allow and Deny Lists: Instantly whitelist or blacklist specific domains with zero DNS downtime.
-- Hardware Armor Control: Toggle USB access instantly through UI directly integrated with system state files.
+- Hardware Armor Control (experimental): The USB armor toggle only stores a flag shown in the UI. It does not block USB devices yet.
 - Monochrome Design: Native Omarchy UI styling adhering strictly to typography standards and color palette rules.
-- OmaBlock Shield Bridge (Chrome / Chromium): Native Manifest V3 extension bridging the kernel-level DNS sinkhole with browser-level declarative rules and deep cosmetic DOM filtering for first-party advertising elements.
-- Hardened Rust Engine: Strict regex sanitization, safe atomic file replacement, bounded memory limits, and zeroize-secured memory buffers.
+- OmaBlock Shield Bridge (Chrome / Chromium): Native Manifest V3 extension (English and Turkish UI) that complements the hosts sinkhole with browser-level declarative rules, a per-site allow toggle, and cosmetic filtering for first-party advertising elements.
+- Hardened Rust Engine: Strict domain validation, safe atomic file replacement, file locks against concurrent edits, and bounded memory limits.
 
 ---
 
@@ -104,7 +117,7 @@ cd ~/.config/omarchy/plugins/ozdil.omablock
 This builds `omablock-engine` from source and places user executables in `~/.local/bin`.
 
 ### Step 3: Install System Sinkhole Helper (Optional)
-To enable system-wide `/etc/hosts` and Polkit integration without raw password prompts, install the package via Arch package manager:
+To enable system-wide `/etc/hosts` and Polkit integration, install the package via Arch package manager. Changes then ask for your password once through Polkit (`auth_admin_keep`), which caches the authorization for a few minutes:
 ```bash
 cd ~/.config/omarchy/plugins/ozdil.omablock
 makepkg -si
@@ -172,7 +185,26 @@ omablock --update
 
 # Flush system DNS resolver cache
 omablock --flush
+
+# Blocking level and pause
+omablock --set-level standard|aggressive|ultimate
+omablock --pause 15        # resumes on its own through a systemd user timer
+omablock --resume
+
+# Emergency network blackout (needs nftables)
+omablock --panic-blackout
+omablock --resume-network
+
+# Restore /etc/hosts from /etc/hosts.omablock.bak (taken before OmaBlock's first change);
+# the current file is kept as /etc/hosts.omablock.pre-restore
+omablock --restore-hosts
+
+# Compare the running binary with the hash recorded at install time
+# exit 0 = OK, 1 = MISMATCH, 3 = UNKNOWN (no install record)
+omablock verify-integrity
 ```
+
+Exit codes: `0` success, `1` the change was saved but applying it to the system failed, `2` invalid domain, category or option, `4` the change was saved but the system helper (`omablock-hosts-sync`) is not installed.
 
 ---
 
@@ -180,7 +212,7 @@ omablock --flush
 
 OmaBlock complies strictly with the Omarchy Linux Security Standards (AGENTS.md):
 - Safe File Synchronization: Hosts file modifications are performed atomically via staging files, ensuring no partial writes or DNS downtime.
-- Subprocess Isolation: Process executions run in isolated process groups (`cmd.process_group(0)`) with monotonic deadlines and 64 KiB buffer caps.
+- Subprocess Isolation: Process executions run in isolated process groups (`cmd.process_group(0)`) with monotonic deadlines and 16 to 32 KiB output caps.
 - Input Sanitization: Domain inputs are strictly validated against domain name standards to prevent configuration poisoning.
 - Plain Text UI: All dynamic text rendered in QML components utilizes `textFormat: Text.PlainText` to prevent script and markup injection.
 

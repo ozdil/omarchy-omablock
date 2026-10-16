@@ -23,7 +23,6 @@ Key Features:
 | :--- | :--- |
 | `declarativeNetRequest` | Required to block intrusive ad and tracker network requests directly in the browser network engine without reading user traffic. |
 | `storage` | Used locally on the device to cache user preferences and active shield toggle states. No external data transmission. |
-| `nativeMessaging` | Enables local communication with the host OmaBlock daemon on Omarchy Linux to synchronize protection status. |
 | `<all_urls>` (Host Permission) | Essential to apply declarative network rules and cosmetic CSS filters across visited web pages to hide inline ad containers. |
 
 ---
@@ -37,4 +36,4 @@ Key Features:
 ---
 
 ## 4. Package File
-- **Ready Upload File**: `/home/ozdil/Projects/omarchy/omarchy-omablock/extensions/omablock-chrome-bridge-v1.0.0.zip`
+- **Ready Upload File**: run `extensions/build-chrome-zip.sh`; it writes `extensions/dist/omablock-chrome-bridge-v<version>.zip` (store images and the `key` field left out).

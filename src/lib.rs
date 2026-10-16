@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod kernel;
+pub mod rules;
 pub mod secure_fs;
 pub mod self_defense;
 pub mod subproc;

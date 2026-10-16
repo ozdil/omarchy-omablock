@@ -49,10 +49,15 @@ if [[ "${1:-}" != "--cli" && -n "${QUICKSHELL_BIN}" ]]; then
     if "${QUICKSHELL_BIN}" ipc call ozdil.omablock toggle >/dev/null 2>&1; then
         exit 0
     fi
-    QML_SHELL="${DIR}/qml/shell.qml"
-    if [[ -f "${QML_SHELL}" ]]; then
-        exec "${QUICKSHELL_BIN}" -p "${QML_SHELL}"
-    fi
+    # The launcher usually runs from a bin dir; the QML lives in the plugin directory.
+    for QML_SHELL in \
+        "${DIR}/qml/shell.qml" \
+        "${HOME}/.config/omarchy/plugins/ozdil.omablock/qml/shell.qml" \
+        "/usr/share/omarchy/plugins/ozdil.omablock/qml/shell.qml"; do
+        if [[ -f "${QML_SHELL}" ]]; then
+            exec "${QUICKSHELL_BIN}" -p "${QML_SHELL}"
+        fi
+    done
 fi
 
 if [[ "${1:-}" == "--cli" ]]; then

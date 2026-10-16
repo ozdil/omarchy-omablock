@@ -1,7 +1,7 @@
 use std::fs::{self, OpenOptions, Permissions};
 use std::io::{Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Verifies that the state directory exists with secure 0700 permissions
@@ -158,6 +158,32 @@ pub fn read_secure_file_bounded(path: &Path, max_bytes: usize) -> Result<String,
 /// Reads a secure file with default 1 MiB ceiling
 pub fn read_secure_file(path: &Path) -> Result<String, String> {
     read_secure_file_bounded(path, 1024 * 1024)
+}
+
+
+/// Home directory of the current user: $HOME when set and absolute, otherwise the
+/// passwd entry for the real uid (pkexec and systemd units may run without HOME).
+pub fn home_dir() -> PathBuf {
+    if let Some(home) = std::env::var_os("HOME") {
+        let p = PathBuf::from(home);
+        if p.is_absolute() {
+            return p;
+        }
+    }
+    // SAFETY: getpwuid_r writes into the caller-provided buffers only; the returned
+    // pw_dir points into `buf`, which outlives its use below.
+    unsafe {
+        let mut pwd: libc::passwd = std::mem::zeroed();
+        let mut result: *mut libc::passwd = std::ptr::null_mut();
+        let mut buf = vec![0 as libc::c_char; 4096];
+        let rc = libc::getpwuid_r(libc::getuid(), &mut pwd, buf.as_mut_ptr(), buf.len(), &mut result);
+        if rc == 0 && !result.is_null() && !pwd.pw_dir.is_null() {
+            let dir = std::ffi::CStr::from_ptr(pwd.pw_dir);
+            use std::os::unix::ffi::OsStrExt;
+            return PathBuf::from(std::ffi::OsStr::from_bytes(dir.to_bytes()));
+        }
+    }
+    PathBuf::from("/nonexistent")
 }
 
 #[cfg(test)]

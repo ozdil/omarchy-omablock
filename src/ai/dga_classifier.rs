@@ -132,19 +132,153 @@ impl DgaClassifier {
         (ratio, max_consonant_run)
     }
 
-    /// Detects IDN Homograph attacks (Punycode 'xn--' prefix or mixed Cyrillic/Latin scripts)
-    pub fn detect_idn_homograph(domain: &str) -> bool {
-        if domain.contains("xn--") {
-            return true;
+    /// RFC 3492 Punycode decoder for one label without the "xn--" prefix.
+    pub fn punycode_decode(input: &str) -> Option<String> {
+        const BASE: u32 = 36;
+        const TMIN: u32 = 1;
+        const TMAX: u32 = 26;
+        const SKEW: u32 = 38;
+        const DAMP: u32 = 700;
+
+        fn adapt(mut delta: u32, num_points: u32, first: bool) -> u32 {
+            delta = if first { delta / DAMP } else { delta / 2 };
+            delta += delta / num_points;
+            let mut k = 0;
+            while delta > ((BASE - TMIN) * TMAX) / 2 {
+                delta /= BASE - TMIN;
+                k += BASE;
+            }
+            k + (((BASE - TMIN + 1) * delta) / (delta + SKEW))
         }
-        let has_cyrillic = domain.chars().any(|c| {
-            let u = c as u32;
-            u >= 0x0400 && u <= 0x04FF
-        });
-        let has_latin = domain.chars().any(|c| c.is_ascii_alphabetic());
-        
-        has_cyrillic && has_latin
+
+        let (basic, extended) = match input.rfind('-') {
+            Some(pos) => (&input[..pos], &input[pos + 1..]),
+            None => ("", input),
+        };
+        if !basic.is_ascii() || input.len() > 63 {
+            return None;
+        }
+        let mut output: Vec<char> = basic.chars().collect();
+        let (mut n, mut i, mut bias) = (128u32, 0u32, 72u32);
+        let mut chars = extended.bytes().peekable();
+        while chars.peek().is_some() {
+            let old_i = i;
+            let mut w = 1u32;
+            let mut k = BASE;
+            loop {
+                let c = chars.next()?;
+                let digit = match c {
+                    b'a'..=b'z' => (c - b'a') as u32,
+                    b'A'..=b'Z' => (c - b'A') as u32,
+                    b'0'..=b'9' => (c - b'0') as u32 + 26,
+                    _ => return None,
+                };
+                i = i.checked_add(digit.checked_mul(w)?)?;
+                let t = if k <= bias { TMIN } else if k >= bias + TMAX { TMAX } else { k - bias };
+                if digit < t {
+                    break;
+                }
+                w = w.checked_mul(BASE - t)?;
+                k += BASE;
+            }
+            let len = output.len() as u32 + 1;
+            bias = adapt(i - old_i, len, old_i == 0);
+            n = n.checked_add(i / len)?;
+            i %= len;
+            output.insert(i as usize, char::from_u32(n)?);
+            i += 1;
+        }
+        Some(output.into_iter().collect())
     }
+
+    /// Maps characters that render like ASCII letters (Cyrillic/Greek look-alikes and
+    /// accented Latin) to that letter; other non-ASCII characters are dropped.
+    fn confusable_skeleton(label: &str) -> String {
+        label
+            .chars()
+            .filter_map(|c| {
+                if c.is_ascii() {
+                    return Some(c.to_ascii_lowercase());
+                }
+                let mapped = match c {
+                    'а' | 'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' | 'α' => 'a',
+                    'с' | 'ç' | 'ć' | 'ĉ' | 'ċ' | 'č' => 'c',
+                    'ԁ' | 'ď' | 'đ' => 'd',
+                    'е' | 'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' | 'ε' => 'e',
+                    'ġ' | 'Ġ' | 'ĝ' | 'ğ' | 'ģ' => 'g',
+                    'һ' | 'ĥ' | 'ħ' => 'h',
+                    'і' | 'ì' | 'í' | 'î' | 'ï' | 'ĩ' | 'ī' | 'ı' | 'ι' => 'i',
+                    'ј' | 'ĵ' => 'j',
+                    'κ' | 'ķ' => 'k',
+                    'ӏ' | 'ĺ' | 'ļ' | 'ľ' | 'ł' => 'l',
+                    'ñ' | 'ń' | 'ņ' | 'ň' | 'η' | 'п' => 'n',
+                    'о' | 'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' | 'ő' | 'ο' => 'o',
+                    'р' | 'ρ' => 'p',
+                    'ԛ' => 'q',
+                    'ѕ' | 'ś' | 'ŝ' | 'ş' | 'š' => 's',
+                    'ù' | 'ú' | 'û' | 'ü' | 'ũ' | 'ū' | 'ů' | 'ű' | 'υ' => 'u',
+                    'ν' => 'v',
+                    'ԝ' | 'ŵ' => 'w',
+                    'х' | 'χ' => 'x',
+                    'у' | 'ý' | 'ÿ' | 'ŷ' => 'y',
+                    'ź' | 'ż' | 'ž' => 'z',
+                    _ => return None,
+                };
+                Some(mapped)
+            })
+            .collect()
+    }
+
+    /// Detects IDN homograph spoofing. Plain internationalised names (e.g. münchen.de,
+    /// яндекс.рф) are not flagged; a label is suspicious when it mixes Latin with
+    /// Cyrillic/Greek, consists only of Latin look-alikes, or imitates a known brand.
+    pub fn detect_idn_homograph(domain: &str) -> bool {
+        let targets = Self::new().known_targets;
+        domain.split('.').any(|raw_label| {
+            let label = match raw_label.strip_prefix("xn--") {
+                Some(encoded) => match Self::punycode_decode(encoded) {
+                    Some(decoded) => decoded,
+                    // Undecodable punycode is malformed on purpose: treat as hostile
+                    None => return true,
+                },
+                None => raw_label.to_string(),
+            };
+            if label.is_ascii() {
+                return false;
+            }
+            // Greek (0370-03FF), Cyrillic (0400-04FF) and Cyrillic Supplement (0500-052F)
+            let is_cyrillic_or_greek = |c: char| (0x0370..=0x052F).contains(&(c as u32));
+            let has_latin = label.chars().any(|c| c.is_ascii_alphabetic());
+            if has_latin && label.chars().any(is_cyrillic_or_greek) {
+                return true;
+            }
+            let skeleton = Self::confusable_skeleton(&label);
+            // Whole-script confusable: a Cyrillic/Greek label made only of letters that
+            // look Latin (e.g. "раураl") renders as a Latin name.
+            if !has_latin
+                && label.chars().any(is_cyrillic_or_greek)
+                && skeleton.chars().count() == label.chars().count()
+            {
+                return true;
+            }
+            targets
+                .iter()
+                .any(|t| skeleton == *t || (skeleton.len() >= 4 && Self::levenshtein(&skeleton, t) == 1))
+        })
+    }
+
+    /// Registrable domains that legitimately embed a brand name (first-party CDNs/APIs).
+    const OFFICIAL_BRAND_DOMAINS: &'static [&'static str] = &[
+        "githubusercontent.com", "githubassets.com", "googleapis.com", "googleusercontent.com",
+        "googlevideo.com", "googletagmanager.com", "youtube-nocookie.com", "microsoftonline.com",
+        "amazonaws.com", "amazontrust.com", "cloudflare-dns.com", "cloudflareinsights.com",
+        "dropboxusercontent.com", "facebookcorewwwi.onion", "applecdn.com", "icloud-content.com",
+        "paypalobjects.com", "discordapp.com", "discordapp.net", "telegram-cdn.org",
+    ];
+
+    /// Second-level labels that combine with a ccTLD into a public suffix (co.uk, com.tr, ...)
+    const COMPOUND_SECOND_LEVEL: &'static [&'static str] =
+        &["co", "com", "org", "net", "gov", "edu", "ac", "gen", "bel", "web", "ne", "or", "go"];
 
     /// Computes classic Levenshtein distance without heap allocations if small
     pub fn levenshtein(a: &str, b: &str) -> usize {
@@ -187,15 +321,35 @@ impl DgaClassifier {
         }
 
         let parts: Vec<&str> = domain.split('.').collect();
-        let main_label = if parts.len() >= 2 {
+        // For example.co.uk the registrable label is "example", not "co"
+        let has_compound_suffix = parts.len() >= 3
+            && parts[parts.len() - 1].len() == 2
+            && Self::COMPOUND_SECOND_LEVEL.contains(&parts[parts.len() - 2]);
+        let main_label = if has_compound_suffix {
+            parts[parts.len() - 3]
+        } else if parts.len() >= 2 {
             parts[parts.len() - 2]
         } else {
             &domain
         };
+        let registrable = if parts.len() >= 2 {
+            parts[parts.len() - 2..].join(".")
+        } else {
+            domain.clone()
+        };
+        let is_official_brand_domain = Self::OFFICIAL_BRAND_DOMAINS.contains(&registrable.as_str());
         let tld = parts.last().copied().unwrap_or("");
 
+        // The entropy/phonetic/digit heuristics model ASCII words; on a punycode label they
+        // would score the encoding itself, so decodable IDN labels are judged by the
+        // homograph check instead.
+        let is_idn_label = main_label
+            .strip_prefix("xn--")
+            .is_some_and(|p| Self::punycode_decode(p).is_some());
+        let lexical_label = if is_idn_label { "" } else { main_label };
+
         // 1. Entropy Analysis
-        let entropy = Self::shannon_entropy(main_label);
+        let entropy = Self::shannon_entropy(lexical_label);
         if entropy > 3.9 && main_label.len() >= 8 {
             risk_score += 0.45;
             reasons.push(format!("Asiri yuksek entropi ({:.2} bits/char): rastgele DGA veya makine uretimi deseni", entropy));
@@ -205,7 +359,7 @@ impl DgaClassifier {
         }
 
         // 2. Phonetics & Consonant Cluster Analysis
-        let (consonant_ratio, max_consonant_run) = Self::analyze_phonetics(main_label);
+        let (consonant_ratio, max_consonant_run) = Self::analyze_phonetics(lexical_label);
         if max_consonant_run >= 5 {
             risk_score += 0.35;
             reasons.push(format!("Ard arda {} unsuz harf yigilmasi (anlamsiz sozcuk / DGA belirtisi)", max_consonant_run));
@@ -216,7 +370,7 @@ impl DgaClassifier {
         }
 
         // 3. Digit Ratio Analysis
-        let digit_count = main_label.chars().filter(|c| c.is_ascii_digit()).count();
+        let digit_count = lexical_label.chars().filter(|c| c.is_ascii_digit()).count();
         if digit_count >= 4 && (digit_count as f64) / (main_label.len() as f64) > 0.35 {
             risk_score += 0.30;
             reasons.push(format!("Alan adi ana etiketinde yogun sayisal karakter kullanimi ({}/{})", digit_count, main_label.len()));
@@ -243,7 +397,7 @@ impl DgaClassifier {
         }).collect();
 
         for &target in self.known_targets {
-            if main_label == target {
+            if main_label == target || is_official_brand_domain {
                 continue;
             }
             if leet_normalized == target {
