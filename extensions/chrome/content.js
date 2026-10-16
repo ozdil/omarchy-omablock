@@ -25,24 +25,9 @@
     }
   }
 
-  // 2. Dynamic Whitelist Check (Extension Storage synced or user toggle)
-  try {
-    const store = await chrome.storage.local.get(['omablock_disabled', 'omablock_whitelist']);
-    if (store && store.omablock_disabled) {
-      return; // Global extension pause
-    }
-    const whitelist = (store && store.omablock_whitelist) ? store.omablock_whitelist : [];
-    for (const wl of whitelist) {
-      const cleanWl = String(wl).toLowerCase().trim();
-      if (cleanWl && (hostname === cleanWl || hostname.endsWith('.' + cleanWl))) {
-        return; // Current domain is whitelisted
-      }
-    }
-  } catch (e) {
-    // Fail-safe: continue safely
-  }
-
-  // 3. Inject Safe Dynamic CSS Rules (Scoped strictly to confirmed advertising elements)
+  // 2. Inject Safe Dynamic CSS Rules first, before the async storage read, so ads
+  //    never flash in; it is removed again below if the site is whitelisted.
+  //    (Scoped strictly to confirmed advertising elements)
   const SAFE_CSS = `
     div[id*="google_ads"],
     div[id^="div-gpt-ad"],
@@ -77,6 +62,18 @@
   styleEl.id = 'omablock-dynamic-cosmetic';
   styleEl.textContent = SAFE_CSS;
   (document.head || document.documentElement).appendChild(styleEl);
+
+  // 3. Dynamic Whitelist Check (popup toggle; same matcher as the popup via whitelist.js)
+  try {
+    const store = await chrome.storage.local.get(['omablock_whitelist']);
+    const whitelist = (store && store.omablock_whitelist) ? store.omablock_whitelist : [];
+    if (whitelist.some(wl => omablockMatchesHost(hostname, wl))) {
+      styleEl.remove();
+      return; // Current domain is whitelisted
+    }
+  } catch (e) {
+    // Fail-safe: keep filtering
+  }
 
   // 4. Site-Specific First-Party Element Purge (e.g. DonanımHaber)
   function purgeFirstPartyAds() {

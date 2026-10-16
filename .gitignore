@@ -5,3 +5,4 @@ omablock-engine
 __pycache__/
 _metadata/
 *.zip
+extensions/dist/
