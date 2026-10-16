@@ -18,12 +18,16 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STUB = os.path.join(REPO, "tests", "qml", "quickshell_stub.py")
 
 try:
+    import PySide6
     import PySide6.QtQml  # noqa: F401
     import PySide6.QtGui  # noqa: F401
 
     HAVE_PYSIDE = True
+    # The stub runs with HOME pointed at a temp dir, which hides a `pip --user` install
+    PYSIDE_PATH = os.path.dirname(os.path.dirname(PySide6.__file__))
 except Exception:  # ImportError, or a missing libEGL/libGL
     HAVE_PYSIDE = False
+    PYSIDE_PATH = ""
 
 FAKE_ENGINE = """#!/bin/bash
 # Records each call; --json prints a status, the other options exit as named
@@ -73,7 +77,14 @@ class QmlRuntimeTests(unittest.TestCase):
         driver = os.path.join(self.tmp, "driver.qml")
         with open(driver, "w") as f:
             f.write(textwrap.dedent(body))
-        env = dict(os.environ, QT_QPA_PLATFORM="offscreen", HOME=self.tmp, FAKE_STATUS=json.dumps(STATUS))
+        pythonpath = os.pathsep.join(p for p in (PYSIDE_PATH, os.environ.get("PYTHONPATH", "")) if p)
+        env = dict(
+            os.environ,
+            QT_QPA_PLATFORM="offscreen",
+            HOME=self.tmp,
+            PYTHONPATH=pythonpath,
+            FAKE_STATUS=json.dumps(STATUS),
+        )
         proc = subprocess.run(
             [sys.executable, STUB, driver], cwd=self.tmp, env=env, capture_output=True, text=True, timeout=60
         )
