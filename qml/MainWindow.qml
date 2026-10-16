@@ -55,31 +55,19 @@ Item {
         return parent + "/omablock-status";
     }
 
-    // Quickshell ignores `running = true` on a Process that is still running,
-    // so engine actions are queued and run one at a time.
-    property var actionQueue: []
-    property bool pendingRefresh: false
+    // Status polling and the serialized action queue live in EngineClient.
+    function refresh() { engine.refresh() }
 
-    function refresh() {
-        if (statusProc.running) {
-            root.pendingRefresh = true;
+    function runAction(cmd, okMsg) { engine.runAction(cmd, okMsg) }
+
+    function reportAction(exitCode, okMsg) {
+        if (exitCode === 0) {
+            if (okMsg) root.testResultMsg = okMsg;
+        } else if (exitCode === 2) {
+            root.testResultMsg = "Rejected: invalid domain or option";
         } else {
-            statusProc.running = true;
+            root.testResultMsg = "Action failed (code " + exitCode + ")";
         }
-    }
-
-    function runAction(cmd) {
-        root.actionQueue.push(cmd);
-        if (!actionProc.running) root.startNextAction();
-    }
-
-    function startNextAction() {
-        if (root.actionQueue.length === 0) {
-            root.refresh();
-            return;
-        }
-        actionProc.command = root.actionQueue.shift();
-        actionProc.running = true;
     }
 
     function toggleBlackout() {
@@ -158,61 +146,45 @@ Item {
         updateProc.running = true;
     }
 
-    Process {
-        id: statusProc
-        command: [root.statusPath]
-        stdout: StdioCollector {
-            waitForEnd: true
-            onStreamFinished: {
-                try {
-                    var d = JSON.parse(text || "{}");
-                    root.isEnabled = !!d.enabled;
-                    root.blockingLevel = d.blocking_level || "aggressive";
-                    root.activeRules = Number(d.active_rules) || 0;
-                    root.totalRules = Number(d.total_rules) || 0;
-                    root.systemHostsActive = !!d.system_hosts_active;
-                    root.pauseRemainingSecs = Number(d.pause_remaining_secs) || 0;
-                    root.dohPrevention = !!d.doh_prevention;
-                    root.aiProtection = !!d.ai_protection;
-                    root.kernelActive = !!(d.kernel_status && d.kernel_status.is_active);
-                    root.whitelist = d.whitelist || [];
-                    root.blacklist = d.blacklist || [];
-                    root.networkBlackoutActive = !!d.network_blackout_active;
-                    root.usbArmorEnabled = !!d.usb_armor_enabled;
-                    root.selfIntegrityHash = d.self_integrity_hash || "";
-                    root.idnHomographDetected = !!d.idn_homograph_detected;
+    function applyStatus(d) {
+        root.isEnabled = !!d.enabled;
+        root.blockingLevel = d.blocking_level || "aggressive";
+        root.activeRules = Number(d.active_rules) || 0;
+        root.totalRules = Number(d.total_rules) || 0;
+        root.systemHostsActive = !!d.system_hosts_active;
+        root.pauseRemainingSecs = Number(d.pause_remaining_secs) || 0;
+        root.dohPrevention = !!d.doh_prevention;
+        root.aiProtection = !!d.ai_protection;
+        root.kernelActive = !!(d.kernel_status && d.kernel_status.is_active);
+        root.whitelist = d.whitelist || [];
+        root.blacklist = d.blacklist || [];
+        root.networkBlackoutActive = !!d.network_blackout_active;
+        root.usbArmorEnabled = !!d.usb_armor_enabled;
+        root.selfIntegrityHash = d.self_integrity_hash || "";
+        root.idnHomographDetected = !!d.idn_homograph_detected;
 
-                    if (d.categories) {
-                        root.catAds = !!d.categories.ads;
-                        root.catTelemetry = !!d.categories.telemetry;
-                        root.catMalware = !!d.categories.malware;
-                        root.catPopups = !!d.categories.popups;
-                        root.catSocial = !!d.categories.social;
-                    }
-
-                    if (d.category_counts) {
-                        root.countAds = Number(d.category_counts.ads) || 0;
-                        root.countTelemetry = Number(d.category_counts.telemetry) || 0;
-                        root.countMalware = Number(d.category_counts.malware) || 0;
-                        root.countPopups = Number(d.category_counts.popups) || 0;
-                        root.countSocial = Number(d.category_counts.social) || 0;
-                    }
-                } catch(e) {
-                    console.warn("Failed to parse omablock status:", e);
-                }
-            }
+        if (d.categories) {
+            root.catAds = !!d.categories.ads;
+            root.catTelemetry = !!d.categories.telemetry;
+            root.catMalware = !!d.categories.malware;
+            root.catPopups = !!d.categories.popups;
+            root.catSocial = !!d.categories.social;
         }
-        onExited: {
-            if (root.pendingRefresh) {
-                root.pendingRefresh = false;
-                statusProc.running = true;
-            }
+
+        if (d.category_counts) {
+            root.countAds = Number(d.category_counts.ads) || 0;
+            root.countTelemetry = Number(d.category_counts.telemetry) || 0;
+            root.countMalware = Number(d.category_counts.malware) || 0;
+            root.countPopups = Number(d.category_counts.popups) || 0;
+            root.countSocial = Number(d.category_counts.social) || 0;
         }
     }
 
-    Process {
-        id: actionProc
-        onExited: root.startNextAction()
+    EngineClient {
+        id: engine
+        statusCommand: [root.statusPath]
+        onStatusReceived: (d) => root.applyStatus(d)
+        onActionFinished: (exitCode, okMsg) => root.reportAction(exitCode, okMsg)
     }
 
     Process {

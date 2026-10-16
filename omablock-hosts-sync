@@ -372,7 +372,7 @@ def apply_rules(rules_file: str):
                 if (
                     domain in RESERVED_DOMAINS
                     or "." not in domain
-                    or domain.endswith((".local", ".localhost", ".lan", ".internal", ".arpa"))
+                    or domain.endswith((".local", ".localhost", ".localdomain", ".lan", ".internal", ".arpa", ".test", ".invalid"))
                 ):
                     continue
 
@@ -635,13 +635,59 @@ def require_root(cmd: str):
         sys.exit(1)
 
 
+PRE_RESTORE_PATH = "/etc/hosts.omablock.pre-restore"
+
+
+def write_hosts_atomically(content: str):
+    """Writes content to HOSTS_PATH through TEMP_PATH with fsync and the original metadata."""
+    if os.path.lexists(TEMP_PATH):
+        os.unlink(TEMP_PATH)
+    fd = os.open(TEMP_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    try:
+        with open(fd, "w", encoding="utf-8", errors="surrogateescape") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        copy_hosts_metadata(TEMP_PATH)
+        os.replace(TEMP_PATH, HOSTS_PATH)
+        fsync_dir(os.path.dirname(HOSTS_PATH) or ".")
+    except Exception:
+        if os.path.lexists(TEMP_PATH):
+            os.unlink(TEMP_PATH)
+        raise
+
+
+def restore_backup():
+    """Puts back the /etc/hosts saved before OmaBlock first touched it.
+    The current file is kept as PRE_RESTORE_PATH, and any OmaBlock block is stripped."""
+    if not os.path.lexists(BACKUP_PATH) or os.path.islink(BACKUP_PATH):
+        print(f"Error: no usable backup at {BACKUP_PATH}.", file=sys.stderr)
+        sys.exit(1)
+    backup = read_hosts_file(BACKUP_PATH)
+    current = read_hosts_file(HOSTS_PATH)
+    try:
+        if os.path.lexists(PRE_RESTORE_PATH):
+            os.unlink(PRE_RESTORE_PATH)
+        fd = os.open(PRE_RESTORE_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+        with open(fd, "w", encoding="utf-8", errors="surrogateescape") as f:
+            f.write(current)
+        write_hosts_atomically(strip_omablock_block(backup))
+    except Exception as e:
+        print(f"Fatal error: could not restore {HOSTS_PATH}: {e}", file=sys.stderr)
+        sys.exit(1)
+    clear_nftables_rules()
+    clear_browser_doh_policy()
+    flush_dns_cache()
+    print(f"Restored {HOSTS_PATH} from {BACKUP_PATH}; previous file kept at {PRE_RESTORE_PATH}.")
+
+
 def main():
     if len(sys.argv) < 2:
-        print("Usage: omablock-hosts-sync [--apply <rules_file> [--with-kernel] | --clear | --status | --blackout-on | --blackout-off]")
+        print("Usage: omablock-hosts-sync [--apply <rules_file> [--with-kernel] | --clear | --status | --blackout-on | --blackout-off | --restore-backup]")
         sys.exit(1)
 
     cmd = sys.argv[1]
-    if cmd in ("--apply", "--clear", "--blackout-on", "--blackout-off") and os.geteuid() == 0:
+    if cmd in ("--apply", "--clear", "--blackout-on", "--blackout-off", "--restore-backup") and os.geteuid() == 0:
         _lock_fd = acquire_helper_lock()  # held until the process exits
     if cmd == "--status":
         get_status()
@@ -650,6 +696,10 @@ def main():
             print("Error: --clear requires root privileges.", file=sys.stderr)
             sys.exit(1)
         clear_rules()
+        write_kernel_state()
+    elif cmd == "--restore-backup":
+        require_root(cmd)
+        restore_backup()
         write_kernel_state()
     elif cmd == "--blackout-on":
         require_root(cmd)

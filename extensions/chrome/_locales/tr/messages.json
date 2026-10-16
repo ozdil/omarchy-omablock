@@ -1,0 +1,44 @@
+{
+  "extName": {
+    "message": "OmaBlock Shield Bridge"
+  },
+  "extDescription": {
+    "message": "Omarchy üzerindeki OmaBlock kalkanı için reklam, izleyici ve kozmetik öğe engelleme köprüsü."
+  },
+  "activePage": {
+    "message": "Aktif Sayfa:"
+  },
+  "unknown": {
+    "message": "Bilinmiyor"
+  },
+  "shieldStatus": {
+    "message": "Kalkan Durumu:"
+  },
+  "protected": {
+    "message": "Korumada"
+  },
+  "whitelisted": {
+    "message": "İzinli (Whitelist)"
+  },
+  "disableHere": {
+    "message": "Bu Sitede Kalkanı Kapat"
+  },
+  "enableHere": {
+    "message": "Bu Sitede Kalkanı Aç"
+  },
+  "unsupportedPage": {
+    "message": "Desteklenmeyen Sayfa"
+  },
+  "disabled": {
+    "message": "Devre Dışı"
+  },
+  "invalidUrl": {
+    "message": "Geçersiz URL"
+  },
+  "error": {
+    "message": "Hata"
+  },
+  "footer": {
+    "message": "Omarchy Zero-Latency Defense"
+  }
+}

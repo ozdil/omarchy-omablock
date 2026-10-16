@@ -29,7 +29,7 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
         self._saved = {
             name: getattr(omablock_sync, name)
             for name in (
-                "HOSTS_PATH", "BACKUP_PATH", "TEMP_PATH", "POLICY_DIRS", "KERNEL_STATE_DIR",
+                "HOSTS_PATH", "BACKUP_PATH", "TEMP_PATH", "POLICY_DIRS", "KERNEL_STATE_DIR", "PRE_RESTORE_PATH",
                 "flush_dns_cache", "apply_nftables_rules", "clear_nftables_rules",
             )
         }
@@ -38,6 +38,7 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
         omablock_sync.TEMP_PATH = os.path.join(sandbox, "hosts.omablock.tmp")
         omablock_sync.POLICY_DIRS = [os.path.join(sandbox, "policies")]
         omablock_sync.KERNEL_STATE_DIR = os.path.join(sandbox, "run-omablock")
+        omablock_sync.PRE_RESTORE_PATH = os.path.join(sandbox, "hosts.omablock.pre-restore")
         omablock_sync.flush_dns_cache = lambda: None
         omablock_sync.apply_nftables_rules = lambda: None
         omablock_sync.clear_nftables_rules = lambda: None
@@ -309,6 +310,24 @@ class TestOmaBlockSyncHelper(unittest.TestCase):
             os.close(other)
         finally:
             os.close(fd)
+
+    def test_restore_backup(self):
+        with open(omablock_sync.HOSTS_PATH, "w") as f:
+            f.write("127.0.0.1 localhost\n10.0.0.5 nas.home\n")
+        rules_file = os.path.join(self._sandbox.name, "rules.txt")
+        with open(rules_file, "w") as f:
+            f.write("0.0.0.0 badtracker.com\n")
+        omablock_sync.apply_rules(rules_file)  # creates the backup
+        with open(omablock_sync.HOSTS_PATH, "a") as f:
+            f.write("192.168.1.9 added-later\n")
+        omablock_sync.restore_backup()
+        with open(omablock_sync.HOSTS_PATH) as f:
+            restored = f.read()
+        self.assertIn("nas.home", restored)
+        self.assertNotIn("badtracker.com", restored)
+        self.assertNotIn("added-later", restored)
+        with open(omablock_sync.PRE_RESTORE_PATH) as f:
+            self.assertIn("added-later", f.read())
 
 
 if __name__ == "__main__":

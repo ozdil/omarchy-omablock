@@ -146,6 +146,8 @@ impl KernelNetfilter {
         dir.join("usb_armor.state")
     }
 
+    /// Experimental: only flips a per-user state flag shown in the UI. Nothing enforces
+    /// it yet (no udev or usbguard rule is written), so it does not block USB devices.
     pub fn toggle_usb_armor() -> bool {
         let state_file = Self::get_usb_armor_state_path();
         let is_active = state_file.exists();

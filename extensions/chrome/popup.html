@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html>
 <head>
   <meta charset="utf-8">
   <style>
@@ -100,17 +100,17 @@
   </div>
 
   <div class="site-card">
-    <div class="site-label">Aktif Sayfa:</div>
-    <div class="site-domain" id="activeDomain">Bilinmiyor</div>
+    <div class="site-label" data-i18n="activePage">Active page:</div>
+    <div class="site-domain" id="activeDomain" data-i18n="unknown">Unknown</div>
     <div class="status-row">
-      <span>Kalkan Durumu:</span>
-      <span class="status-badge" id="statusBadge">Korumada</span>
+      <span data-i18n="shieldStatus">Shield status:</span>
+      <span class="status-badge" id="statusBadge" data-i18n="protected">Protected</span>
     </div>
   </div>
 
-  <button id="toggleBtn">Bu Sitede Kalkanı Kapat</button>
+  <button id="toggleBtn" data-i18n="disableHere">Turn off shield on this site</button>
 
-  <div class="footer">Omarchy Zero-Latency Defense</div>
+  <div class="footer" data-i18n="footer">Omarchy Zero-Latency Defense</div>
 
   <script src="whitelist.js"></script>
   <script src="popup.js"></script>

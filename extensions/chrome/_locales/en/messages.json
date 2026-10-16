@@ -1,0 +1,44 @@
+{
+  "extName": {
+    "message": "OmaBlock Shield Bridge"
+  },
+  "extDescription": {
+    "message": "Ad, tracker and cosmetic element blocking bridge for the OmaBlock shield on Omarchy."
+  },
+  "activePage": {
+    "message": "Active page:"
+  },
+  "unknown": {
+    "message": "Unknown"
+  },
+  "shieldStatus": {
+    "message": "Shield status:"
+  },
+  "protected": {
+    "message": "Protected"
+  },
+  "whitelisted": {
+    "message": "Allowed (whitelist)"
+  },
+  "disableHere": {
+    "message": "Turn off shield on this site"
+  },
+  "enableHere": {
+    "message": "Turn on shield on this site"
+  },
+  "unsupportedPage": {
+    "message": "Unsupported page"
+  },
+  "disabled": {
+    "message": "Inactive"
+  },
+  "invalidUrl": {
+    "message": "Invalid URL"
+  },
+  "error": {
+    "message": "Error"
+  },
+  "footer": {
+    "message": "Omarchy Zero-Latency Defense"
+  }
+}

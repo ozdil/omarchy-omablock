@@ -34,10 +34,6 @@ jobs:
       - name: Shell syntax
         run: bash -n build.sh uninstall.sh omablock-dashboard omablock-status omablock.install
 
-      - name: BoundedTextInput copies in sync
-        # Panel.qml and qml/MainWindow.qml each load the copy next to them
-        run: cmp BoundedTextInput.qml qml/BoundedTextInput.qml
-
       - name: Validate extension rules and versions
         run: |
           node -e '

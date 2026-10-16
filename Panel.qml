@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "qml"
 
 Panel {
   id: root
@@ -104,47 +105,37 @@ Panel {
     toastTimer.restart()
   }
 
-  // Quickshell ignores `running = true` on a Process that is still running,
-  // so engine actions are queued and run one at a time.
-  property var actionQueue: []
-  property bool pendingRefresh: false
-
   function refresh() {
-    if (statusProc.running) {
-      root.pendingRefresh = true
+    engine.refresh()
+  }
+
+  function runAction(cmd, okMsg) {
+    engine.runAction(cmd, okMsg)
+  }
+
+  // okMsg is shown only after the engine exits 0, so a rejected domain or a failed
+  // privileged sync no longer reports success.
+  function reportAction(exitCode, okMsg) {
+    if (exitCode === 0) {
+      if (okMsg) root.showToast(okMsg)
+    } else if (exitCode === 2) {
+      root.showToast("Rejected: invalid domain or option")
     } else {
-      statusProc.running = true
+      root.showToast("Action failed (code " + exitCode + ")")
     }
-  }
-
-  function runAction(cmd) {
-    root.actionQueue.push(cmd)
-    if (!actionProc.running) root.startNextAction()
-  }
-
-  function startNextAction() {
-    if (root.actionQueue.length === 0) {
-      root.refresh()
-      return
-    }
-    actionProc.command = root.actionQueue.shift()
-    actionProc.running = true
   }
 
   function setBlockingLevel(lvl) {
-    root.runAction([root.resolveEnginePath(), "--set-level", lvl])
     var label = lvl === "ultimate" ? "Ultimate (Anti-Popup)" : (lvl === "aggressive" ? "Aggressive" : "Standard")
-    root.showToast("Blocking level: " + label)
+    root.runAction([root.resolveEnginePath(), "--set-level", lvl], "Blocking level: " + label)
   }
 
   function pauseShield(minutes) {
-    root.runAction([root.resolveEnginePath(), "--pause", String(minutes)])
-    root.showToast("Shield paused for " + minutes + " minutes")
+    root.runAction([root.resolveEnginePath(), "--pause", String(minutes)], "Shield paused for " + minutes + " minutes")
   }
 
   function resumeShield() {
-    root.runAction([root.resolveEnginePath(), "--resume"])
-    root.showToast("Shield protection resumed")
+    root.runAction([root.resolveEnginePath(), "--resume"], "Shield protection resumed")
   }
 
   function toggleDohGuard() {
@@ -189,32 +180,47 @@ Panel {
   }
 
   function flushDns() {
-    root.runAction([root.resolveEnginePath(), "--flush"])
-    showToast("Flushed system DNS caches")
+    root.runAction([root.resolveEnginePath(), "--flush"], "Flushed system DNS caches")
+  }
+
+  // Same rules as the engine's validate_domain, checked before spawning a process
+  function isValidDomain(domain) {
+    var d = String(domain || "").trim().toLowerCase().replace(/\.+$/, "")
+    if (d.length === 0 || d.length > 253 || d.indexOf(".") < 0) return false
+    if (/\.(local|localhost|lan|internal|arpa|test|invalid)$/.test(d)) return false
+    var labels = d.split(".")
+    for (var i = 0; i < labels.length; i++) {
+      if (!/^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/.test(labels[i])) return false
+    }
+    return true
   }
 
   function addWhitelist(domain) {
     if (!domain) return
-    root.runAction([root.resolveEnginePath(), "--whitelist-add", domain])
-    showToast("Whitelisted: " + domain)
+    if (!root.isValidDomain(domain)) {
+      root.showToast("Invalid domain: " + domain)
+      return
+    }
+    root.runAction([root.resolveEnginePath(), "--whitelist-add", domain], "Whitelisted: " + domain)
   }
 
   function removeWhitelist(domain) {
     if (!domain) return
-    root.runAction([root.resolveEnginePath(), "--whitelist-remove", domain])
-    showToast("Removed from whitelist: " + domain)
+    root.runAction([root.resolveEnginePath(), "--whitelist-remove", domain], "Removed from whitelist: " + domain)
   }
 
   function addBlacklist(domain) {
     if (!domain) return
-    root.runAction([root.resolveEnginePath(), "--blacklist-add", domain])
-    showToast("Blocked: " + domain)
+    if (!root.isValidDomain(domain)) {
+      root.showToast("Invalid domain: " + domain)
+      return
+    }
+    root.runAction([root.resolveEnginePath(), "--blacklist-add", domain], "Blocked: " + domain)
   }
 
   function removeBlacklist(domain) {
     if (!domain) return
-    root.runAction([root.resolveEnginePath(), "--blacklist-remove", domain])
-    showToast("Removed from blacklist: " + domain)
+    root.runAction([root.resolveEnginePath(), "--blacklist-remove", domain], "Removed from blacklist: " + domain)
   }
 
   IpcHandler {
@@ -230,71 +236,54 @@ Panel {
     function setLevel(lvl: string) { root.setBlockingLevel(lvl) }
   }
 
-  Process {
-    id: statusProc
-    command: [root.resolveEnginePath(), "--json"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var cleanText = String(text || "").slice(0, 131072)
-          var d = JSON.parse(cleanText)
-          root.isEnabled = !!d.enabled
-          root.blockingLevel = d.blocking_level || "aggressive"
-          root.activeRules = d.active_rules || 0
-          root.totalRules = d.total_rules || 0
-          root.systemHostsActive = !!d.system_hosts_active
+  function applyStatus(d) {
+    root.isEnabled = !!d.enabled
+    root.blockingLevel = d.blocking_level || "aggressive"
+    root.activeRules = d.active_rules || 0
+    root.totalRules = d.total_rules || 0
+    root.systemHostsActive = !!d.system_hosts_active
 
-          if (d.categories) {
-            root.catAds = !!d.categories.ads
-            root.catTelemetry = !!d.categories.telemetry
-            root.catMalware = !!d.categories.malware
-            root.catSocial = !!d.categories.social
-            root.catPopups = !!d.categories.popups
-          }
-
-          if (d.category_counts) {
-            root.countAds = d.category_counts.ads || 0
-            root.countTelemetry = d.category_counts.telemetry || 0
-            root.countMalware = d.category_counts.malware || 0
-            root.countSocial = d.category_counts.social || 0
-            root.countPopups = d.category_counts.popups || 0
-          }
-
-          root.whitelist = d.whitelist || []
-          root.blacklist = d.blacklist || []
-          root.lastUpdated = d.last_updated || "Built-in Curated v1.0"
-          root.pauseRemainingSecs = d.pause_remaining_secs || 0
-          root.dohPrevention = !!d.doh_prevention
-          root.aiProtection = !!d.ai_protection
-          root.kernelEnforcement = !!d.kernel_enforcement
-          if (d.kernel_status) {
-            root.kernelActive = !!(d.kernel_status.is_active || d.kernel_status.active)
-            root.kernelRuleCount = d.kernel_status.active_rule_count || d.kernel_status.rule_count || 0
-          }
-
-          if (d.last_test) {
-            root.testSuccess = !!d.last_test.success
-            root.testMessage = d.last_test.message || ""
-            root.testLatency = d.last_test.avg_latency_ms || 0.0
-          }
-        } catch (e) {}
-      }
+    if (d.categories) {
+      root.catAds = !!d.categories.ads
+      root.catTelemetry = !!d.categories.telemetry
+      root.catMalware = !!d.categories.malware
+      root.catSocial = !!d.categories.social
+      root.catPopups = !!d.categories.popups
     }
-    onExited: {
-      if (root.pendingRefresh) {
-        root.pendingRefresh = false
-        statusProc.running = true
-      }
+
+    if (d.category_counts) {
+      root.countAds = d.category_counts.ads || 0
+      root.countTelemetry = d.category_counts.telemetry || 0
+      root.countMalware = d.category_counts.malware || 0
+      root.countSocial = d.category_counts.social || 0
+      root.countPopups = d.category_counts.popups || 0
+    }
+
+    root.whitelist = d.whitelist || []
+    root.blacklist = d.blacklist || []
+    root.lastUpdated = d.last_updated || "Built-in Curated v1.0"
+    root.pauseRemainingSecs = d.pause_remaining_secs || 0
+    root.dohPrevention = !!d.doh_prevention
+    root.aiProtection = !!d.ai_protection
+    root.kernelEnforcement = !!d.kernel_enforcement
+    if (d.kernel_status) {
+      root.kernelActive = !!(d.kernel_status.is_active || d.kernel_status.active)
+      root.kernelRuleCount = d.kernel_status.active_rule_count || d.kernel_status.rule_count || 0
+    }
+
+    if (d.last_test) {
+      root.testSuccess = !!d.last_test.success
+      root.testMessage = d.last_test.message || ""
+      root.testLatency = d.last_test.avg_latency_ms || 0.0
     }
   }
 
-  Process {
-    id: actionProc
-    onExited: root.startNextAction()
+  EngineClient {
+    id: engine
+    statusCommand: [root.resolveEnginePath(), "--json"]
+    onStatusReceived: (d) => root.applyStatus(d)
+    onActionFinished: (exitCode, okMsg) => root.reportAction(exitCode, okMsg)
   }
-
-
 
   Process {
     id: testProc
@@ -376,9 +365,7 @@ Panel {
   }
 
   Component.onDestruction: {
-    root.actionQueue = []
-    if (statusProc.running) statusProc.running = false
-    if (actionProc.running) actionProc.running = false
+    engine.stop()
     if (testProc.running) testProc.running = false
     if (updateProc.running) updateProc.running = false
     if (toastTimer.running) toastTimer.running = false

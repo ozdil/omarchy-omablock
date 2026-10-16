@@ -1,5 +1,6 @@
 // The binary uses the library crate instead of compiling its own copy of every
 // module, so the code the tests cover is the code that ships.
+use omablock_engine::rules::{count_managed_hosts_rules, parse_rules_content};
 use omablock_engine::{kernel, secure_fs, self_defense, subproc, validate_domain};
 
 pub use omablock_engine::{AiClassification, AiRiskAssessment, DgaClassifier};
@@ -316,7 +317,9 @@ pub struct OmaBlockConfig {
     pub auto_update: bool,
     #[serde(default)]
     pub paused_until: Option<u64>,
-    #[serde(default = "default_true")]
+    // Same default as OmaBlockConfig::default(), so old configs without the field
+    // behave like fresh installs
+    #[serde(default)]
     pub doh_prevention: bool,
     #[serde(default = "default_true")]
     pub ai_protection: bool,
@@ -502,6 +505,80 @@ fn acquire_config_lock() -> Option<File> {
     }
 }
 
+const PAUSE_TIMER_UNIT: &str = "omablock-pause-expiry";
+
+/// Schedules `--expire-pause` with a transient systemd user timer, so the shield comes
+/// back on time even when no panel is polling the status.
+fn schedule_pause_expiry(secs: u64) -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    let Some(exe) = exe.to_str().map(str::to_string) else {
+        return false;
+    };
+    let pairs = get_gui_env_pairs();
+    let envs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    // Replace a timer left from an earlier pause
+    let _ = subproc::run_cmd_bounded(
+        "/usr/bin/systemctl",
+        &["--user", "stop", &format!("{}.timer", PAUSE_TIMER_UNIT)],
+        &envs,
+        deadline,
+        4096,
+    );
+    let on_active = format!("--on-active={}s", secs.max(1));
+    let unit = format!("--unit={}", PAUSE_TIMER_UNIT);
+    subproc::run_cmd_bounded(
+        "/usr/bin/systemd-run",
+        &["--user", "--collect", "--quiet", &unit, &on_active, "--timer-property=AccuracySec=1s", &exe, "--expire-pause"],
+        &envs,
+        Instant::now() + Duration::from_secs(5),
+        4096,
+    )
+    .is_some()
+}
+
+/// SHA-256 that build.sh recorded for the running binary, if it was installed that way.
+fn expected_install_hash() -> Option<String> {
+    let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
+    let manifest = secure_fs::read_secure_file(&get_state_dir().join("install_manifest.json")).ok()?;
+    let data: serde_json::Value = serde_json::from_str(&manifest).ok()?;
+    let files = data.get("files")?.as_object()?;
+    files.iter().find_map(|(path, digest)| {
+        let recorded = std::path::Path::new(path).canonicalize().ok()?;
+        if recorded == exe {
+            digest.as_str().map(str::to_string)
+        } else {
+            None
+        }
+    })
+}
+
+/// AI protection: before a domain is whitelisted, warn when the classifier rates it as a
+/// phishing / homograph look-alike, and remember homograph sightings for the status view.
+fn ai_review_whitelist_candidate(cfg: &OmaBlockConfig, domain: &str) {
+    if !cfg.ai_protection {
+        return;
+    }
+    let assessment = DgaClassifier::new().assess(domain);
+    if DgaClassifier::detect_idn_homograph(domain) {
+        let _ = secure_fs::atomic_write_secure(&get_state_dir().join("idn_detected.state"), domain.as_bytes());
+    }
+    if assessment.is_suspicious && assessment.classification == AiClassification::PhishingTyposquat {
+        eprintln!(
+            "Warning: '{}' looks like a phishing/typosquat domain (risk {:.2}): {}",
+            domain,
+            assessment.risk_score,
+            assessment.reasons.join("; ")
+        );
+        send_notification(
+            "OmaBlock AI Warning",
+            &format!("{} looks like a phishing look-alike; whitelisted anyway", domain),
+        );
+    }
+}
+
 fn save_config(cfg: &OmaBlockConfig) {
     let path = get_config_path();
     if let Ok(json) = serde_json::to_string_pretty(cfg) {
@@ -619,24 +696,6 @@ pub struct ParsedRules {
     pub category_counts: HashMap<String, usize>,
 }
 
-fn parse_rules_content(content: &str, all_rules: &mut HashMap<String, String>) {
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let cat = parts[0].to_lowercase();
-            let domain = parts[1].to_lowercase();
-            all_rules.insert(domain, cat);
-        } else if parts.len() == 1 {
-            let domain = parts[0].to_lowercase();
-            all_rules.insert(domain, "ads".to_string());
-        }
-    }
-}
-
 fn load_all_rules() -> ParsedRules {
     let mut all_rules = HashMap::new();
     let mut category_counts: HashMap<String, usize> = HashMap::new();
@@ -647,7 +706,8 @@ fn load_all_rules() -> ParsedRules {
     category_counts.insert("popups".to_string(), 0);
 
     // 1. Always load curated builtin rules FIRST (ensures telemetry and ad sinks exist)
-    parse_rules_content(BUILTIN_RULES, &mut all_rules);
+    let rejected = parse_rules_content(BUILTIN_RULES, &mut all_rules);
+    debug_assert_eq!(rejected, 0, "builtin rules must all be valid domains");
 
     // 2. Load dedicated built-in popup and redirect shield rules
     for domain in BUILTIN_POPUP_RULES {
@@ -660,7 +720,10 @@ fn load_all_rules() -> ParsedRules {
     let cached_path = get_cached_rules_path();
     if cached_path.exists() {
         if let Ok(content) = secure_fs::read_secure_file_bounded(&cached_path, 32 * 1024 * 1024) {
-            parse_rules_content(&content, &mut all_rules);
+            let rejected = parse_rules_content(&content, &mut all_rules);
+            if rejected > 0 {
+                eprintln!("OmaBlock: skipped {} invalid entries in cached rules", rejected);
+            }
         }
     }
 
@@ -679,31 +742,9 @@ fn load_all_rules() -> ParsedRules {
 /// Number of IPv4 sinkhole entries OmaBlock currently has in /etc/hosts.
 fn count_system_hosts_rules() -> usize {
     match File::open("/etc/hosts") {
-        Ok(file) => count_system_hosts_rules_from_reader(BufReader::new(file)),
+        Ok(file) => count_managed_hosts_rules(BufReader::new(file)),
         Err(_) => 0,
     }
-}
-
-/// Counts what is actually enforced (categories, level, whitelist and blacklist already
-/// applied), unlike the size of the loaded rule set. The `::` DoH lines duplicate
-/// an IPv4 entry and are not counted twice.
-pub fn count_system_hosts_rules_from_reader<R: BufRead>(reader: R) -> usize {
-    let mut inside_block = false;
-    let mut count = 0;
-    for line in reader.lines().map_while(Result::ok) {
-        let trimmed = line.trim();
-        if trimmed.contains("# --- BEGIN OMABLOCK MANAGED RULES ---") {
-            inside_block = true;
-            continue;
-        }
-        if trimmed.contains("# --- END OMABLOCK MANAGED RULES ---") {
-            break;
-        }
-        if inside_block && trimmed.starts_with("0.0.0.0 ") {
-            count += 1;
-        }
-    }
-    count
 }
 
 #[cfg(test)]
@@ -726,9 +767,15 @@ pub fn is_system_hosts_active_from_reader<R: BufRead>(reader: R) -> bool {
     inside_block && rule_count > 0
 }
 
+/// Set when a privileged hosts sync fails, so the command exits non-zero and the
+/// panel can report the failure instead of a success toast.
+static SYNC_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
     if !cfg.enabled {
-        let _ = run_privileged_helper(&["--clear"], 16384);
+        if run_privileged_helper(&["--clear"], 16384).is_none() {
+            SYNC_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         return 0;
     }
 
@@ -744,7 +791,9 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
                 "malware" => cfg.categories.malware,
                 _ => false,
             },
-            BlockingLevel::Aggressive => match cat.as_str() {
+            // Ultimate turns every category on when selected (see --set-level), but the
+            // per-category toggles still apply afterwards so the UI switches are not inert.
+            BlockingLevel::Aggressive | BlockingLevel::Ultimate => match cat.as_str() {
                 "ads" => cfg.categories.ads,
                 "telemetry" => cfg.categories.telemetry,
                 "malware" => cfg.categories.malware,
@@ -752,10 +801,6 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
                 "popups" => cfg.categories.popups,
                 _ => true,
             },
-            BlockingLevel::Ultimate => {
-                // In Ultimate level, all categories and aggressive pop-ups are strictly enforced
-                true
-            }
         };
 
         if is_cat_enabled {
@@ -780,7 +825,8 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
     }
 
     // DoH Bypass Prevention: Block encrypted DNS endpoints and canary domains to ensure browsers honor system sinkhole rules
-    if cfg.doh_prevention || cfg.blocking_level == BlockingLevel::Ultimate {
+    // Ultimate switches doh_prevention on when selected; the toggle is honoured afterwards
+    if cfg.doh_prevention {
         let doh_domains = [
             "use-application-dns.net", // Firefox Canary
             "dns.google",
@@ -803,7 +849,11 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
             "dns.sb",
         ];
         for d in &doh_domains {
-            active_domains.insert(d.to_string());
+            // A DoH resolver the user explicitly whitelisted stays reachable
+            let whitelisted = whitelist_set.contains(*d) || wl_suffixes.iter().any(|s| d.ends_with(s.as_str()));
+            if !whitelisted {
+                active_domains.insert(d.to_string());
+            }
         }
     }
 
@@ -833,6 +883,7 @@ fn sync_system_hosts(cfg: &OmaBlockConfig, rules: &ParsedRules) -> usize {
         active_domains.len()
     } else {
         eprintln!("Warning: omablock-hosts-sync --apply failed or timed out");
+        SYNC_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
         0
     }
 }
@@ -1173,6 +1224,7 @@ fn main() {
                 match validate_domain(&args[2]) {
                     Ok(domain) => {
                         if !cfg.whitelist.contains(&domain) {
+                            ai_review_whitelist_candidate(&cfg, &domain);
                             cfg.whitelist.push(domain.clone());
                             save_config(&cfg);
                             if cfg.enabled {
@@ -1303,11 +1355,31 @@ fn main() {
             cfg.enabled = false;
             save_config(&cfg);
             sync_system_hosts(&cfg, &rules);
+            if !schedule_pause_expiry(mins.saturating_mul(60)) {
+                eprintln!("Notice: no systemd user timer; the pause ends on the next panel refresh after it expires");
+            }
             send_notification(
                 "OmaBlock Shield: PAUSED",
                 &format!("AdBlocker paused for {} minutes", mins),
             );
             println!("OmaBlock paused for {} minutes.", mins);
+        }
+        "--restore-hosts" | "restore-hosts" => {
+            // Puts back the /etc/hosts saved before OmaBlock's first apply
+            let ok = run_privileged_helper(&["--restore-backup"], 16384).is_some();
+            println!("Hosts restored from backup: {}", ok);
+            if !ok {
+                std::process::exit(1);
+            }
+        }
+        "--expire-pause" => {
+            // Run by the systemd user timer that --pause schedules. A no-op unless a pause
+            // is still pending and due, so a manual resume/disable in between is respected.
+            if check_pause_expiry(&mut cfg, &rules) {
+                println!("Pause expired; protection resumed.");
+            } else {
+                println!("No expired pause.");
+            }
         }
         "--resume" => {
             cfg.paused_until = None;
@@ -1331,7 +1403,14 @@ fn main() {
         "--set-level" => {
             if args.len() > 2 {
                 if let Some(level) = BlockingLevel::from_str(&args[2]) {
+                    let leaving_ultimate =
+                        cfg.blocking_level == BlockingLevel::Ultimate && level != BlockingLevel::Ultimate;
                     cfg.blocking_level = level;
+                    if leaving_ultimate {
+                        // Undo what the Ultimate preset switched on; the user can re-enable them
+                        cfg.doh_prevention = false;
+                        cfg.kernel_enforcement = false;
+                    }
                     match level {
                         BlockingLevel::Standard => {
                             cfg.categories.ads = true;
@@ -1406,7 +1485,10 @@ fn main() {
         "--ai-scan" | "ai-scan" => {
             let classifier = DgaClassifier::new();
             let mut suspicious_list = Vec::new();
-            for domain in rules.all_rules.keys() {
+            // Sorted so the first 20 hits are the same on every run (HashMap order is random)
+            let mut domains: Vec<&String> = rules.all_rules.keys().collect();
+            domains.sort();
+            for domain in domains {
                 let assessment = classifier.assess(domain);
                 if assessment.is_suspicious {
                     suspicious_list.push(assessment);
@@ -1435,12 +1517,28 @@ fn main() {
             println!("{}", ruleset);
         }
         "--verify-integrity" | "verify-integrity" => {
-            match self_defense::calculate_self_exe_sha256() {
-                Ok(hash) => {
-                    println!("INTEGRITY_HASH: {}", hash);
-                    println!("STATUS: OK (Verified)");
+            let hash = match self_defense::calculate_self_exe_sha256() {
+                Ok(h) => h,
+                Err(e) => {
+                    eprintln!("INTEGRITY ERROR: {}", e);
+                    std::process::exit(1);
                 }
-                Err(e) => eprintln!("INTEGRITY ERROR: {}", e),
+            };
+            println!("INTEGRITY_HASH: {}", hash);
+            // Compare with the hash build.sh recorded at install time
+            match expected_install_hash() {
+                Some(expected) if self_defense::constant_time_eq(expected.as_bytes(), hash.as_bytes()) => {
+                    println!("STATUS: OK (matches install manifest)");
+                }
+                Some(_) => {
+                    println!("STATUS: MISMATCH (binary differs from install manifest)");
+                    std::process::exit(1);
+                }
+                None => {
+                    // Package installs (/usr/bin) are tracked by pacman: `pacman -Qkk omarchy-omablock`
+                    println!("STATUS: UNKNOWN (no install manifest entry for this binary)");
+                    std::process::exit(3);
+                }
             }
         }
         "--panic-blackout" | "panic-blackout" => {
@@ -1460,11 +1558,16 @@ fn main() {
         }
         "--toggle-usb-armor" | "toggle-usb-armor" => {
             let status = kernel::KernelNetfilter::toggle_usb_armor();
-            println!("USB Armor set to: {}", status);
+            println!("USB Armor flag set to: {} (experimental: no USB devices are blocked yet)", status);
         }
         _ => {
-            eprintln!("Usage: omablock-engine [--status|--enable|--disable|--toggle|--set-level <standard|aggressive|ultimate>|--level|--toggle-category <cat>|--whitelist-add <d>|--whitelist-remove <d>|--blacklist-add <d>|--blacklist-remove <d>|--toggle-ai|--toggle-kernel|ai-inspect <domain>|ai-scan|kernel-status|kernel-ruleset|--toggle-auto-update|--set-auto-update <bool>|--pause <mins>|--resume|--toggle-doh-guard|--startup|--test|--update|--flush]");
+            eprintln!("Usage: omablock-engine [--status|--json|--enable|--disable|--toggle|--set-level <standard|aggressive|ultimate>|--level|--toggle-category <cat>|--whitelist-add <d>|--whitelist-remove <d>|--blacklist-add <d>|--blacklist-remove <d>|--toggle-ai|--toggle-kernel|ai-inspect <domain>|ai-scan|kernel-status|kernel-ruleset|verify-integrity|--toggle-auto-update|--set-auto-update <bool>|--pause <mins>|--resume|--expire-pause|--panic-blackout|--resume-network|--restore-hosts|--toggle-usb-armor|--toggle-doh-guard|--startup|--test|--update|--flush]");
+            std::process::exit(2);
         }
+    }
+
+    if !is_status && SYNC_FAILED.load(std::sync::atomic::Ordering::Relaxed) {
+        std::process::exit(1);
     }
 }
 
@@ -1604,8 +1707,8 @@ mod tests {
     #[test]
     fn test_count_system_hosts_rules_reader() {
         let hosts = "127.0.0.1 localhost\n# --- BEGIN OMABLOCK MANAGED RULES ---\n# banner\n0.0.0.0 a.com\n0.0.0.0 dns.google\n:: dns.google\n# --- END OMABLOCK MANAGED RULES ---\n0.0.0.0 user-entry.com\n";
-        assert_eq!(count_system_hosts_rules_from_reader(hosts.as_bytes()), 2);
-        assert_eq!(count_system_hosts_rules_from_reader("127.0.0.1 localhost\n".as_bytes()), 0);
+        assert_eq!(count_managed_hosts_rules(hosts.as_bytes()), 2);
+        assert_eq!(count_managed_hosts_rules("127.0.0.1 localhost\n".as_bytes()), 0);
     }
 
     #[test]

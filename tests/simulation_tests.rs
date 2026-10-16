@@ -1,8 +1,9 @@
 use omablock_engine::ai::DgaClassifier;
+use omablock_engine::rules::{count_managed_hosts_rules, parse_rules_content, HOSTS_BEGIN_MARKER, HOSTS_END_MARKER};
 use omablock_engine::secure_fs;
 use omablock_engine::self_defense::{constant_time_eq, enforce_anti_tamper, sha256_hex, SecureBuffer};
 use omablock_engine::validate_domain;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 
@@ -77,45 +78,49 @@ fn test_ab_simulation_mode_a_userspace_fallback() {
 
 #[test]
 fn test_ab_simulation_mode_b_privileged_helper_rule_processing() {
-    // Mode B: Simulates hosts generation and validation pipeline
+    // Mode B: the engine's real rule parser feeds the hosts block the helper installs
     let env = TestEnv::new("mode_b");
-    let rules_file = env.path("active_hosts.txt");
+    let rules_file = env.path("cached_rules.txt");
 
-    let test_domains = ["0.0.0.0 doubleclick.net",
-        "0.0.0.0 pagead2.googlesyndication.com",
-        "0.0.0.0 telemetry.microsoft.com",
-        "0.0.0.0 1dot1dot1dot1.cloudflare-dns.com",
+    let cached = [
+        "ads doubleclick.net",
+        "ads pagead2.googlesyndication.com",
+        "telemetry telemetry.microsoft.com",
+        "bare-entry.example.org",
         "# Comment line",
         "   ",
-        "0.0.0.0 invalid..domain",
-        "0.0.0.0 -badstart.com"];
-
-    let content = test_domains.join("\n");
-    secure_fs::atomic_write_secure(&rules_file, content.as_bytes()).unwrap();
-
-    // Verify rules file parsing & domain sanitation
+        "ads invalid..domain",
+        "ads -badstart.com",
+        "ads evil.com;id",
+        "malware 0.0.0.0",
+    ];
+    secure_fs::atomic_write_secure(&rules_file, cached.join("\n").as_bytes()).unwrap();
     let parsed = secure_fs::read_secure_file(&rules_file).unwrap();
-    let mut valid_set = HashSet::new();
 
-    for line in parsed.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 && parts[0] == "0.0.0.0" {
-            let d = parts[1].trim();
-            if let Ok(validated) = validate_domain(d) {
-                valid_set.insert(validated);
-            }
-        }
+    let mut rules = HashMap::new();
+    let rejected = parse_rules_content(&parsed, &mut rules);
+
+    assert_eq!(rules.get("doubleclick.net").map(String::as_str), Some("ads"));
+    assert_eq!(rules.get("telemetry.microsoft.com").map(String::as_str), Some("telemetry"));
+    assert_eq!(rules.get("bare-entry.example.org").map(String::as_str), Some("ads"));
+    assert_eq!(rules.len(), 4);
+    assert_eq!(rejected, 4, "invalid domains must be dropped, not passed to the helper");
+
+    // The managed block the helper writes is counted the same way the status reports it
+    let mut hosts = format!("127.0.0.1 localhost\n{}\n", HOSTS_BEGIN_MARKER);
+    for d in rules.keys() {
+        hosts.push_str(&format!("0.0.0.0 {}\n:: {}\n", d, d));
     }
+    hosts.push_str(&format!("{}\n0.0.0.0 user-owned.example\n", HOSTS_END_MARKER));
+    assert_eq!(count_managed_hosts_rules(hosts.as_bytes()), 4);
+}
 
-    assert!(valid_set.contains("doubleclick.net"));
-    assert!(valid_set.contains("pagead2.googlesyndication.com"));
-    assert!(valid_set.contains("telemetry.microsoft.com"));
-    assert!(!valid_set.contains("invalid..domain"));
-    assert!(!valid_set.contains("-badstart.com"));
+#[test]
+fn test_builtin_rules_are_all_valid_domains() {
+    let mut rules = HashMap::new();
+    let rejected = parse_rules_content(include_str!("../assets/rules_builtin.txt"), &mut rules);
+    assert_eq!(rejected, 0, "assets/rules_builtin.txt contains invalid domains");
+    assert!(!rules.is_empty());
 }
 
 // -----------------------------------------------------------------------------

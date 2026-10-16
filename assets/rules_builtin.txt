@@ -29764,7 +29764,6 @@ ads lobocaudalorio.net
 ads loboclick.com
 ads lobopatrimecto.net
 ads loc1.hitsprocessor.com
-ads local
 telemetry local-analytics.uberinternal.com
 ads local-download.com
 ads local-media.ambient-platform.com
@@ -29774,7 +29773,6 @@ ads local.emxdgt.com
 ads local.ownlocal.com
 ads localbestdating1.com
 ads localh0st.info
-ads localhost.localdomain
 ads localo.fr
 ads localytics.com
 ads locate.pricespider.com
@@ -79557,8 +79555,6 @@ telemetry browser.sentry-cdn.com
 telemetry o33249.ingest.sentry.io
 telemetry in.appcenter.ms
 social connect.facebook.net
-malware malware-test.omablock.local
-malware phishing-test.omablock.local
 ads reklam.com.tr
 ads reklamstore.com
 ads admatic.com.tr

@@ -43,8 +43,6 @@ package() {
     install -Dm755 "omablock-status" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/omablock-status"
     install -Dm644 "manifest.json" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/manifest.json"
     install -Dm644 "Panel.qml" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/Panel.qml"
-    # Panel.qml resolves BoundedTextInput from its own directory
-    install -Dm644 "BoundedTextInput.qml" "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/BoundedTextInput.qml"
 
     install -d "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/qml"
     cp -r qml/* "${pkgdir}/usr/share/omarchy/plugins/ozdil.omablock/qml/"

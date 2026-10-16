@@ -6,22 +6,26 @@
 
 ![OmaBlock Preview](preview.png)
 
-> **Omarchy Linux için çekirdek ve sistem seviyesinde, sıfır gecikmeli reklam ve takipçi engelleyici.**
+> **Omarchy Linux için sistem genelinde, sıfır gecikmeli reklam ve takipçi engelleyici.**
 
-OmaBlock; tarayıcı eklentilerine bağımlı kalmadan tüm sistem genelinde reklam, telemetri, kötü amaçlı yazılım ve takipçileri engeller. Yapay zeka destekli DGA / phishing tespiti, netfilter / nftables kuralları ve kullanıcı alanında yüksek güvenlikli Rust motoru (`omablock-engine`) ile çalışır.
+OmaBlock; tarayıcı eklentilerine bağımlı kalmadan tüm sistem genelinde reklam, telemetri, kötü amaçlı yazılım ve takipçileri engeller. Yapay zeka destekli DGA / phishing tespiti, isteğe bağlı nftables kuralları ve kullanıcı alanında yüksek güvenlikli Rust motoru (`omablock-engine`) ile çalışır.
 
 ---
 
 ## Yetenekler ve Özellikler
 
 - **Sistem Düzeyinde Sıfır Gecikme:**
-  - DNS seviyesinde engelleme ile tarayıcı eklentilerinin bellek ve işlemci yükünü ortadan kaldırır.
+  - Engellenen alan adları `/etc/hosts` dosyasına `0.0.0.0` olarak yazılır. Sistem çözümleyicisi (glibc NSS, kullanıcı alanında) bunları yerelde yanıtlar, araya proxy girmez.
 - **Yapay Zeka Destekli DGA ve Oltalama Koruması:**
   - Shannon entropisi ve sezgisel algoritmalar ile sahte/üretilmiş alan adlarını tespit eder.
 - **Kategori Bazlı Seçici Filtreleme:**
   - Reklamlar, Telemetri, Kötü Amaçlı Yazılımlar, Sosyal Takipçiler ve Açılır Pencereler (Pop-ups) bağımsız yönetilebilir.
 - **OmaBlock Shield Bridge (Chrome & Chromium Köprüsü):**
-  - Çekirdek seviyesindeki DNS sinkhole korumasını tarayıcı içine taşıyan Manifest V3 uzantısı. DonanımHaber, Haberler.com gibi sitelerdeki first-party gömülü bannerları ve DOM içi reklam alanlarını sıfır gecikmeyle yok eder.
+  - hosts tabanlı korumayı tarayıcı içi kurallarla tamamlayan Manifest V3 uzantısı (Türkçe ve İngilizce arayüz). DonanımHaber, Haberler.com gibi sitelerdeki first-party gömülü bannerları ve DOM içi reklam alanlarını sıfır gecikmeyle yok eder.
+- **İsteğe Bağlı Çekirdek Koruması ve Blackout (`nftables` gerekir):**
+  - Çekirdek koruması, bilinen genel çözümleyicilere (Cloudflare, Google, Quad9) giden DoH (443), DoT (853) ve UDP DNS (53) trafiğini reddeden `inet omablock` tablosunu ekler. Panik Blackout, siz ağı geri açana kadar loopback dışındaki tüm DNS trafiğini (53 ve 853) keser.
+- **USB Zırhı (deneysel):**
+  - Şimdilik yalnızca arayüzde gösterilen bir bayrağı saklar, USB aygıtlarını engellemez.
 - **Klavye Kısayolları ve Ergonomi:**
   - Space/Enter (aç/kapat), r (yenile), t (canlı test çalıştır), u (kuralları güncelle), a (künye overlay).
 - **Omarchy Tema Entegrasyonu:**
@@ -43,6 +47,24 @@ cargo build --release
 install -m 755 target/release/omablock-engine ./omablock-engine
 ```
 
+### Sistem Yardımcısını Kurma (İsteğe Bağlı)
+`/etc/hosts` ve Polkit entegrasyonu için paketi kurun. Değişiklikler Polkit üzerinden bir kez parola ister (`auth_admin_keep`) ve yetki birkaç dakika saklanır:
+```bash
+makepkg -si
+```
+
+### Komut Satırı
+```bash
+omablock --set-level standard|aggressive|ultimate
+omablock --pause 15          # systemd kullanıcı zamanlayıcısı ile kendiliğinden devam eder
+omablock --resume
+omablock --panic-blackout    # acil ağ kesme (nftables gerekir)
+omablock --resume-network
+omablock --restore-hosts     # /etc/hosts dosyasını ilk değişiklikten önceki yedeğe döndürür
+omablock verify-integrity    # 0 = OK, 1 = MISMATCH, 3 = UNKNOWN
+```
+Çıkış kodları: `0` başarılı, `1` ayar kaydedildi ama sisteme uygulanamadı, `2` geçersiz alan adı, kategori veya seçenek.
+
 ### Omarchy Shell Yapılandırması
 `~/.config/omarchy/shell.json` dosyasında `bar.layout.right` altına ekleyin:
 ```json
@@ -61,7 +83,8 @@ omarchy-restart-shell
 ## Güvenlik Standartları
 
 - Tamamen kullanıcı alanında 0600 dosya ve 0700 dizin izinleri ile atomik veri yönetimi.
-- Subprocess süreç izolasyonu, bounded buffer ve monotonic deadline koruması.
+- Subprocess süreç izolasyonu, 16 ile 32 KiB arası çıktı sınırı ve monotonic deadline koruması.
+- Eşzamanlı değişikliklere karşı yapılandırma ve yardımcı süreç kilitleri.
 - Sıfır emoji politikası ve kurumsal sıfır güven mimarisi.
 
 ---
