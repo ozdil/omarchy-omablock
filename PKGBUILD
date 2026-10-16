@@ -11,9 +11,15 @@ optdepends=('nftables: kernel-level DoH/DoT enforcement')
 makedepends=('cargo' 'rust')
 install=omablock.install
 
+prepare() {
+    cd "${startdir}"
+    # Fetch crates up front so build() works offline and with --frozen
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
 build() {
     cd "${startdir}"
-    cargo build --release --locked
+    cargo build --release --frozen
 }
 
 package() {

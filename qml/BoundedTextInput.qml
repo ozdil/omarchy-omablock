@@ -117,7 +117,15 @@ TextEdit {
                     pasteProcess.running = false;
                     return ;
                 }
-                pasteProcess.collectedBytes += chunk.length;
+                // Count UTF-8 bytes, not UTF-16 code units, so the limit matches its name.
+                // A chunk can end in half a surrogate pair; then count the worst case.
+                var chunkBytes;
+                try {
+                    chunkBytes = unescape(encodeURIComponent(chunk)).length;
+                } catch (e) {
+                    chunkBytes = chunk.length * 3;
+                }
+                pasteProcess.collectedBytes += chunkBytes;
                 if (pasteProcess.collectedBytes > control.maxPasteBytes) {
                     pasteProcess.overflowed = true;
                     pasteProcess.running = false;

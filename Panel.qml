@@ -1723,6 +1723,9 @@ Panel {
               placeholderText: "Domain (e.g. ad.example.com)"
               placeholderTextColor: root.textTertiary
               maxLength: 256
+              onPasteNoticeChanged: {
+                if (pasteNotice) root.showToast(pasteNotice)
+              }
               onAccepted: {
                 if (domainInput.text.trim()) {
                   root.addWhitelist(domainInput.text.trim())
